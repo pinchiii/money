@@ -91,11 +91,7 @@ const App = (() => {
     }
   }
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
-  }
+  // SW disabled during Supabase migration - will re-enable later
 
   document.addEventListener('DOMContentLoaded', init);
 

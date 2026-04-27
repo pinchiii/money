@@ -138,12 +138,12 @@ const Store = (() => {
   async function syncFromCloud() {
     try {
       const [txRes, cardRes, accRes, settRes, catRes, billRes] = await Promise.all([
-        supabase.from('transactions').select('*').order('created_at', { ascending: false }),
-        supabase.from('credit_cards').select('*'),
-        supabase.from('accounts').select('*'),
-        supabase.from('settings').select('*').eq('id', 'global').single(),
-        supabase.from('categories').select('*'),
-        supabase.from('auto_bills').select('*'),
+        db.from('transactions').select('*').order('created_at', { ascending: false }),
+        db.from('credit_cards').select('*'),
+        db.from('accounts').select('*'),
+        db.from('settings').select('*').eq('id', 'global').single(),
+        db.from('categories').select('*'),
+        db.from('auto_bills').select('*'),
       ]);
 
       if (txRes.data) {
@@ -188,7 +188,7 @@ const Store = (() => {
     if (type === 'income') saveCache(CACHE.incomeCats, cats);
     else saveCache(CACHE.expenseCats, cats);
 
-    supabase.from('categories').insert({ cat_id: cat.id, icon: cat.icon, name: cat.name, type }).then();
+    db.from('categories').insert({ cat_id: cat.id, icon: cat.icon, name: cat.name, type }).then();
     return cats;
   }
 
@@ -203,7 +203,7 @@ const Store = (() => {
     const dbUpdates = {};
     if (updates.icon) dbUpdates.icon = updates.icon;
     if (updates.name) dbUpdates.name = updates.name;
-    supabase.from('categories').update(dbUpdates).eq('cat_id', id).eq('type', type).then();
+    db.from('categories').update(dbUpdates).eq('cat_id', id).eq('type', type).then();
     return cats;
   }
 
@@ -213,7 +213,7 @@ const Store = (() => {
     if (type === 'income') saveCache(CACHE.incomeCats, cats);
     else saveCache(CACHE.expenseCats, cats);
 
-    supabase.from('categories').delete().eq('cat_id', id).eq('type', type).then();
+    db.from('categories').delete().eq('cat_id', id).eq('type', type).then();
     return cats;
   }
 
@@ -245,7 +245,7 @@ const Store = (() => {
     },
     saveSettings(s) {
       saveCache(CACHE.settings, s);
-      supabase.from('settings').upsert({ id: 'global', data: s, updated_at: new Date().toISOString() }).then();
+      db.from('settings').upsert({ id: 'global', data: s, updated_at: new Date().toISOString() }).then();
     },
 
     // ── Accounts ──
@@ -261,7 +261,7 @@ const Store = (() => {
       account.id = uid();
       list.push(account);
       saveCache(CACHE.accounts, list);
-      supabase.from('accounts').insert(appAccToDb(account)).then();
+      db.from('accounts').insert(appAccToDb(account)).then();
       return account;
     },
     updateAccount(id, updates) {
@@ -270,13 +270,13 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.accounts, list);
-        supabase.from('accounts').update(appAccToDb(list[idx])).eq('id', id).then();
+        db.from('accounts').update(appAccToDb(list[idx])).eq('id', id).then();
       }
     },
     deleteAccount(id) {
       const list = this.getAccounts().filter(a => a.id !== id);
       saveCache(CACHE.accounts, list);
-      supabase.from('accounts').delete().eq('id', id).then();
+      db.from('accounts').delete().eq('id', id).then();
     },
     adjustAccountBalance(id, delta) {
       const list = this.getAccounts();
@@ -284,7 +284,7 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx].balance = (list[idx].balance || 0) + delta;
         saveCache(CACHE.accounts, list);
-        supabase.from('accounts').update({ balance: list[idx].balance }).eq('id', id).then();
+        db.from('accounts').update({ balance: list[idx].balance }).eq('id', id).then();
       }
     },
 
@@ -333,7 +333,7 @@ const Store = (() => {
       tx.createdAt = new Date().toISOString();
       list.unshift(tx);
       saveCache(CACHE.transactions, list);
-      supabase.from('transactions').insert(appTxToDb(tx)).then();
+      db.from('transactions').insert(appTxToDb(tx)).then();
       return tx;
     },
 
@@ -346,7 +346,7 @@ const Store = (() => {
       });
       saveCache(CACHE.transactions, list);
       const dbRows = txs.map(appTxToDb);
-      supabase.from('transactions').insert(dbRows).then();
+      db.from('transactions').insert(dbRows).then();
       return txs.length;
     },
 
@@ -356,14 +356,14 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.transactions, list);
-        supabase.from('transactions').update(appTxToDb(list[idx])).eq('id', id).then();
+        db.from('transactions').update(appTxToDb(list[idx])).eq('id', id).then();
       }
     },
 
     deleteTransaction(id) {
       const list = this.getTransactions().filter(t => t.id !== id);
       saveCache(CACHE.transactions, list);
-      supabase.from('transactions').delete().eq('id', id).then();
+      db.from('transactions').delete().eq('id', id).then();
     },
 
     // ── Credit Cards ──
@@ -381,7 +381,7 @@ const Store = (() => {
       card.id = uid();
       list.push(card);
       saveCache(CACHE.creditCards, list);
-      supabase.from('credit_cards').insert(appCardToDb(card)).then();
+      db.from('credit_cards').insert(appCardToDb(card)).then();
       return card;
     },
 
@@ -391,14 +391,14 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.creditCards, list);
-        supabase.from('credit_cards').update(appCardToDb(list[idx])).eq('id', id).then();
+        db.from('credit_cards').update(appCardToDb(list[idx])).eq('id', id).then();
       }
     },
 
     deleteCreditCard(id) {
       const list = this.getCreditCards().filter(c => c.id !== id);
       saveCache(CACHE.creditCards, list);
-      supabase.from('credit_cards').delete().eq('id', id).then();
+      db.from('credit_cards').delete().eq('id', id).then();
     },
 
     getCardUnpaidAmount(cardId) {
@@ -517,7 +517,7 @@ const Store = (() => {
       if (newBills > 0) {
         saveCache(CACHE.autoBills, processed);
         processed.slice(-newBills).forEach(billKey => {
-          supabase.from('auto_bills').insert({ bill_key: billKey }).then();
+          db.from('auto_bills').insert({ bill_key: billKey }).then();
         });
       }
       return newBills;
@@ -540,46 +540,46 @@ const Store = (() => {
         const data = JSON.parse(json);
         if (data.transactions) {
           saveCache(CACHE.transactions, data.transactions);
-          await supabase.from('transactions').delete().neq('id', '');
+          await db.from('transactions').delete().neq('id', '');
           const dbTxs = data.transactions.map(appTxToDb);
           for (let i = 0; i < dbTxs.length; i += 500) {
-            await supabase.from('transactions').upsert(dbTxs.slice(i, i + 500));
+            await db.from('transactions').upsert(dbTxs.slice(i, i + 500));
           }
         }
         if (data.creditCards) {
           saveCache(CACHE.creditCards, data.creditCards);
-          await supabase.from('credit_cards').delete().neq('id', '');
+          await db.from('credit_cards').delete().neq('id', '');
           if (data.creditCards.length > 0) {
-            await supabase.from('credit_cards').upsert(data.creditCards.map(appCardToDb));
+            await db.from('credit_cards').upsert(data.creditCards.map(appCardToDb));
           }
         }
         if (data.accounts) {
           saveCache(CACHE.accounts, data.accounts);
-          await supabase.from('accounts').delete().neq('id', '');
+          await db.from('accounts').delete().neq('id', '');
           if (data.accounts.length > 0) {
-            await supabase.from('accounts').upsert(data.accounts.map(appAccToDb));
+            await db.from('accounts').upsert(data.accounts.map(appAccToDb));
           }
         }
         if (data.settings) {
           saveCache(CACHE.settings, data.settings);
-          await supabase.from('settings').upsert({ id: 'global', data: data.settings, updated_at: new Date().toISOString() });
+          await db.from('settings').upsert({ id: 'global', data: data.settings, updated_at: new Date().toISOString() });
         }
         if (data.autoBills) {
           saveCache(CACHE.autoBills, data.autoBills);
-          await supabase.from('auto_bills').delete().neq('id', 0);
+          await db.from('auto_bills').delete().neq('id', 0);
           if (data.autoBills.length > 0) {
-            await supabase.from('auto_bills').upsert(data.autoBills.map(k => ({ bill_key: k })));
+            await db.from('auto_bills').upsert(data.autoBills.map(k => ({ bill_key: k })));
           }
         }
         if (data.expenseCategories) {
           saveCache(CACHE.expenseCats, data.expenseCategories);
-          await supabase.from('categories').delete().eq('type', 'expense');
-          await supabase.from('categories').insert(data.expenseCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'expense' })));
+          await db.from('categories').delete().eq('type', 'expense');
+          await db.from('categories').insert(data.expenseCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'expense' })));
         }
         if (data.incomeCategories) {
           saveCache(CACHE.incomeCats, data.incomeCategories);
-          await supabase.from('categories').delete().eq('type', 'income');
-          await supabase.from('categories').insert(data.incomeCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'income' })));
+          await db.from('categories').delete().eq('type', 'income');
+          await db.from('categories').insert(data.incomeCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'income' })));
         }
         return true;
       } catch (e) {
