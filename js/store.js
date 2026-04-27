@@ -535,18 +535,57 @@ const Store = (() => {
       }, null, 2);
     },
 
-    importData(json) {
+    async importData(json) {
       try {
         const data = JSON.parse(json);
-        if (data.transactions) saveCache(CACHE.transactions, data.transactions);
-        if (data.creditCards) saveCache(CACHE.creditCards, data.creditCards);
-        if (data.accounts) saveCache(CACHE.accounts, data.accounts);
-        if (data.settings) saveCache(CACHE.settings, data.settings);
-        if (data.autoBills) saveCache(CACHE.autoBills, data.autoBills);
-        if (data.expenseCategories) saveCache(CACHE.expenseCats, data.expenseCategories);
-        if (data.incomeCategories) saveCache(CACHE.incomeCats, data.incomeCategories);
+        if (data.transactions) {
+          saveCache(CACHE.transactions, data.transactions);
+          await supabase.from('transactions').delete().neq('id', '');
+          const dbTxs = data.transactions.map(appTxToDb);
+          for (let i = 0; i < dbTxs.length; i += 500) {
+            await supabase.from('transactions').upsert(dbTxs.slice(i, i + 500));
+          }
+        }
+        if (data.creditCards) {
+          saveCache(CACHE.creditCards, data.creditCards);
+          await supabase.from('credit_cards').delete().neq('id', '');
+          if (data.creditCards.length > 0) {
+            await supabase.from('credit_cards').upsert(data.creditCards.map(appCardToDb));
+          }
+        }
+        if (data.accounts) {
+          saveCache(CACHE.accounts, data.accounts);
+          await supabase.from('accounts').delete().neq('id', '');
+          if (data.accounts.length > 0) {
+            await supabase.from('accounts').upsert(data.accounts.map(appAccToDb));
+          }
+        }
+        if (data.settings) {
+          saveCache(CACHE.settings, data.settings);
+          await supabase.from('settings').upsert({ id: 'global', data: data.settings, updated_at: new Date().toISOString() });
+        }
+        if (data.autoBills) {
+          saveCache(CACHE.autoBills, data.autoBills);
+          await supabase.from('auto_bills').delete().neq('id', 0);
+          if (data.autoBills.length > 0) {
+            await supabase.from('auto_bills').upsert(data.autoBills.map(k => ({ bill_key: k })));
+          }
+        }
+        if (data.expenseCategories) {
+          saveCache(CACHE.expenseCats, data.expenseCategories);
+          await supabase.from('categories').delete().eq('type', 'expense');
+          await supabase.from('categories').insert(data.expenseCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'expense' })));
+        }
+        if (data.incomeCategories) {
+          saveCache(CACHE.incomeCats, data.incomeCategories);
+          await supabase.from('categories').delete().eq('type', 'income');
+          await supabase.from('categories').insert(data.incomeCategories.map(c => ({ cat_id: c.id, icon: c.icon, name: c.name, type: 'income' })));
+        }
         return true;
-      } catch { return false; }
+      } catch (e) {
+        console.error('Import error:', e);
+        return false;
+      }
     },
   };
 })();
