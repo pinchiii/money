@@ -150,6 +150,12 @@ const App = (() => {
     }
   }
 
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/money/sw.js').catch(() => {});
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
   return { navigate, refresh, logout, verifyGate };
