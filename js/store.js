@@ -12,8 +12,8 @@ const Store = (() => {
 
   const DEFAULT_SETTINGS = {
     users: [
-      { id: 'user1', name: '我', emoji: '🧑', pin: '' },
-      { id: 'user2', name: '另一半', emoji: '💕', pin: '' },
+      { id: 'user1', name: '品琪', emoji: '👧', pin: '' },
+      { id: 'user2', name: '崇軒', emoji: '👦', pin: '' },
     ],
     currency: 'NT$',
   };
