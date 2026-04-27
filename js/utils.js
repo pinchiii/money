@@ -39,6 +39,7 @@ const Utils = (() => {
   }
 
   function getUserInfo(userId) {
+    if (userId === 'shared_wallet') return { id: 'shared_wallet', name: '共用錢包', emoji: '💩', pin: '' };
     const settings = Store.getSettings();
     return settings.users.find(u => u.id === userId) || settings.users[0];
   }

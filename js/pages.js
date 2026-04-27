@@ -572,6 +572,7 @@ const Pages = (() => {
         <div class="form-field" id="payer-field" style="${isPersonal ? 'display:none' : ''}">
           <label>由誰支出</label>
           <select id="tx-user" onchange="Pages.onPayerChange()">
+            <option value="shared_wallet">💩 共用錢包</option>
             ${settings.users.map(u => `
               <option value="${u.id}" ${defaultPayer === u.id ? 'selected' : ''}>${u.emoji} ${u.name}</option>
             `).join('')}
@@ -648,7 +649,13 @@ const Pages = (() => {
 
   function onPayerChange() {
     const selectedUser = document.getElementById('tx-user').value;
-    updateCardOptions(selectedUser);
+    const cardField = document.getElementById('card-field');
+    if (selectedUser === 'shared_wallet') {
+      if (cardField) cardField.style.display = 'none';
+    } else {
+      if (cardField) cardField.style.display = '';
+      updateCardOptions(selectedUser);
+    }
   }
 
   function updateCardOptions(userId) {
@@ -1416,9 +1423,9 @@ const Pages = (() => {
       description: document.getElementById('tx-desc').value.trim(),
       note: document.getElementById('tx-note').value.trim(),
       date: document.getElementById('tx-date').value,
-      userId: walletType === 'personal' ? me : document.getElementById('tx-user').value,
+      userId: walletType === 'personal' ? me : (document.getElementById('tx-user').value === 'shared_wallet' ? 'shared_wallet' : document.getElementById('tx-user').value),
       walletType,
-      creditCardId: type === 'expense' ? (document.getElementById('tx-card')?.value || '') : '',
+      creditCardId: type === 'expense' && document.getElementById('tx-user')?.value !== 'shared_wallet' ? (document.getElementById('tx-card')?.value || '') : '',
     };
 
     if (editId) {
