@@ -93,7 +93,7 @@ const Store = (() => {
       statementDay: row.statement_day,
       paymentDay: row.payment_day,
       linkedAccountId: row.linked_account_id || '',
-      color: row.color || '#6C5CE7',
+      color: row.color || '#7A9E7E',
     };
   }
 
@@ -106,7 +106,7 @@ const Store = (() => {
       statement_day: card.statementDay,
       payment_day: card.paymentDay,
       linked_account_id: card.linkedAccountId || '',
-      color: card.color || '#6C5CE7',
+      color: card.color || '#7A9E7E',
     };
   }
 

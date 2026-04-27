@@ -1,27 +1,27 @@
 :root {
-  --primary: #6C5CE7;
-  --primary-light: #A29BFE;
-  --primary-dark: #5A4BD1;
-  --accent: #00CEC9;
-  --danger: #FF6B6B;
-  --success: #00B894;
-  --warning: #FDCB6E;
-  --bg: #F8F9FD;
-  --card: #FFFFFF;
-  --text: #2D3436;
-  --text-secondary: #636E72;
-  --text-muted: #B2BEC3;
-  --border: #E8ECF1;
-  --shadow: 0 2px 12px rgba(108, 92, 231, 0.08);
-  --shadow-lg: 0 8px 30px rgba(108, 92, 231, 0.12);
+  --primary: #7A9E7E;
+  --primary-light: #A8C5AB;
+  --primary-dark: #5E8162;
+  --accent: #8B6F47;
+  --danger: #C97B6B;
+  --success: #7A9E7E;
+  --warning: #D4A96A;
+  --bg: #F5F1EB;
+  --card: #FFFDF9;
+  --text: #3E3529;
+  --text-secondary: #7A7067;
+  --text-muted: #B5ADA4;
+  --border: #E6DFD5;
+  --shadow: 0 2px 12px rgba(139, 111, 71, 0.06);
+  --shadow-lg: 0 8px 30px rgba(139, 111, 71, 0.10);
   --radius: 16px;
   --radius-sm: 10px;
   --tab-height: 72px;
   --header-height: 56px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --income-color: #00B894;
-  --expense-color: #FF6B6B;
+  --income-color: #7A9E7E;
+  --expense-color: #C97B6B;
 }
 
 * {
@@ -55,8 +55,8 @@ body {
   justify-content: space-between;
   padding: 12px 20px;
   padding-top: calc(12px + var(--safe-top));
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, #7A9E7E, #6B8F6F);
+  border-bottom: none;
   backdrop-filter: blur(12px);
   min-height: var(--header-height);
 }
@@ -64,14 +64,14 @@ body {
 #page-title {
   font-size: 20px;
   font-weight: 700;
-  color: var(--primary);
+  color: #FFFDF9;
 }
 
 .header-btn {
   width: 36px;
   height: 36px;
   border: none;
-  background: var(--bg);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -238,12 +238,12 @@ body {
 }
 
 .balance-card.income .balance-card-icon {
-  background: rgba(0, 184, 148, 0.12);
+  background: rgba(122, 158, 126, 0.12);
   color: var(--income-color);
 }
 
 .balance-card.expense .balance-card-icon {
-  background: rgba(255, 107, 107, 0.12);
+  background: rgba(201, 123, 107, 0.12);
   color: var(--expense-color);
 }
 
@@ -519,13 +519,13 @@ body {
 .type-toggle button.active-expense {
   background: var(--expense-color);
   color: white;
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  box-shadow: 0 4px 12px rgba(201, 123, 107, 0.3);
 }
 
 .type-toggle button.active-income {
   background: var(--income-color);
   color: white;
-  box-shadow: 0 4px 12px rgba(0, 184, 148, 0.3);
+  box-shadow: 0 4px 12px rgba(122, 158, 126, 0.3);
 }
 
 .amount-input-wrap {
@@ -620,7 +620,7 @@ body {
 
 .category-btn.active {
   border-color: var(--primary);
-  background: rgba(108, 92, 231, 0.06);
+  background: rgba(122, 158, 126, 0.08);
   color: var(--primary);
   font-weight: 600;
 }
@@ -640,13 +640,13 @@ body {
 .submit-btn.expense {
   background: var(--expense-color);
   color: white;
-  box-shadow: 0 4px 14px rgba(255, 107, 107, 0.3);
+  box-shadow: 0 4px 14px rgba(201, 123, 107, 0.3);
 }
 
 .submit-btn.income {
   background: var(--income-color);
   color: white;
-  box-shadow: 0 4px 14px rgba(0, 184, 148, 0.3);
+  box-shadow: 0 4px 14px rgba(122, 158, 126, 0.3);
 }
 
 .submit-btn:active {
@@ -1090,24 +1090,27 @@ body {
   justify-content: center;
   min-height: 70vh;
   padding: 40px 20px;
+  background: linear-gradient(180deg, rgba(122,158,126,0.08) 0%, transparent 60%);
+  border-radius: var(--radius);
 }
 
 .login-logo {
   font-size: 72px;
-  margin-bottom: 8px;
-  animation: bounce 2s infinite;
+  margin-bottom: 12px;
+  animation: sway 3s ease-in-out infinite;
 }
 
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+@keyframes sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
 }
 
 .login-title {
   font-size: 28px;
   font-weight: 800;
-  color: var(--primary);
+  color: var(--accent);
   margin-bottom: 6px;
+  letter-spacing: 1px;
 }
 
 .login-subtitle {
@@ -1142,6 +1145,7 @@ body {
 .login-user-btn:active {
   transform: scale(0.96);
   border-color: var(--primary);
+  background: rgba(122, 158, 126, 0.06);
 }
 
 .login-user-emoji {
@@ -1250,7 +1254,7 @@ body {
 
 .wallet-toggle-btn.active-shared {
   border-color: var(--primary);
-  background: rgba(108, 92, 231, 0.06);
+  background: rgba(122, 158, 126, 0.08);
 }
 
 .wallet-toggle-btn.active-shared .wt-label {
@@ -1529,7 +1533,7 @@ body {
 .view-mode-btn.active {
   background: var(--primary);
   color: white;
-  box-shadow: 0 2px 8px rgba(108, 92, 231, 0.3);
+  box-shadow: 0 2px 8px rgba(122, 158, 126, 0.3);
 }
 
 /* ── Calendar View ── */
@@ -1639,7 +1643,7 @@ body {
   padding: 16px;
   border: 2px dashed var(--primary);
   border-radius: 16px;
-  background: rgba(108, 92, 231, 0.05);
+  background: rgba(122, 158, 126, 0.06);
   color: var(--primary);
   font-size: 16px;
   font-weight: 700;
@@ -1682,7 +1686,7 @@ body {
 
 .notion-import-btn:active {
   border-color: var(--primary);
-  background: rgba(108, 92, 231, 0.05);
+  background: rgba(122, 158, 126, 0.06);
 }
 
 .nib-icon {
@@ -1743,7 +1747,7 @@ body {
 
 .icon-pick-btn.active {
   border-color: var(--primary);
-  background: rgba(108, 92, 231, 0.1);
+  background: rgba(122, 158, 126, 0.12);
   transform: scale(1.1);
 }
 

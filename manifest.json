@@ -1,12 +1,12 @@
 {
-  "name": "Pinchi 記帳",
-  "short_name": "Pinchi",
+  "name": "輕鬆記帳",
+  "short_name": "輕鬆記帳",
   "description": "情侶共同記帳，輕鬆管理共用與個人支出",
   "start_url": "/money/",
   "scope": "/money/",
   "display": "standalone",
-  "background_color": "#F8F9FD",
-  "theme_color": "#6C5CE7",
+  "background_color": "#F5F1EB",
+  "theme_color": "#7A9E7E",
   "orientation": "portrait",
   "icons": [
     {

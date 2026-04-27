@@ -2,7 +2,7 @@ const App = (() => {
   let currentPage = 'dashboard';
 
   const PAGE_TITLES = {
-    login: 'Pinchi',
+    login: '輕鬆記帳',
     dashboard: '首頁',
     transactions: '明細',
     add: '記帳',

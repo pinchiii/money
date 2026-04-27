@@ -11,9 +11,9 @@ const Pages = (() => {
     const settings = Store.getSettings();
     return `
       <div class="login-screen">
-        <div class="login-logo">💰</div>
-        <h2 class="login-title">Pinchi 記帳</h2>
-        <p class="login-subtitle">選擇你的身份開始使用</p>
+        <div class="login-logo">🏕️</div>
+        <h2 class="login-title">輕鬆記帳</h2>
+        <p class="login-subtitle">一起輕鬆管理我們的帳務吧</p>
         <div class="login-users">
           ${settings.users.map(u => `
             <button class="login-user-btn" onclick="Pages.tryLogin('${u.id}')">
@@ -105,7 +105,7 @@ const Pages = (() => {
           <div class="card-title">即將扣款</div>
           ${upcomingBills.map(b => `
             <div class="bill-item" onclick="Pages.viewCardStatement('${b.card.id}')">
-              <div class="bill-dot" style="background:${b.card.color || '#6C5CE7'}"></div>
+              <div class="bill-dot" style="background:${b.card.color || '#7A9E7E'}"></div>
               <div class="bill-info">
                 <div class="bill-name">${b.card.name}</div>
                 <div class="bill-date">扣款日 ${b.payDate.getMonth() + 1}/${b.payDate.getDate()}（${Utils.daysUntil(b.payDate)} 天後）</div>
@@ -343,8 +343,8 @@ const Pages = (() => {
       </div>`;
 
     const colors = [
-      '#6C5CE7', '#FF6B6B', '#00B894', '#FDCB6E', '#00CEC9',
-      '#E17055', '#A29BFE', '#FAB1A0', '#81ECEC', '#74B9FF',
+      '#7A9E7E', '#C97B6B', '#8B6F47', '#D4A96A', '#A8C5AB',
+      '#B8956A', '#6B8F6F', '#D4A07A', '#9BB59E', '#C4A882',
       '#FD79A8', '#636E72'
     ];
 
@@ -383,7 +383,7 @@ const Pages = (() => {
     `;
 
     if (walletFilter === 'shared') {
-      const payerColors = ['#6C5CE7', '#FF6B6B', '#00B894', '#FDCB6E'];
+      const payerColors = ['#7A9E7E', '#C97B6B', '#8B6F47', '#D4A96A'];
       const payerTotals = {};
       expenses.forEach(tx => {
         const user = Utils.getUserInfo(tx.userId);
