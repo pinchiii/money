@@ -296,7 +296,7 @@ const Store = (() => {
     getVisibleTransactions() {
       const me = this.getCurrentUser();
       return this.getTransactions().filter(tx =>
-        tx.walletType === 'shared' || tx.userId === me
+        tx.walletType === 'shared' || tx.walletType === 'house_fund' || tx.userId === me
       );
     },
 

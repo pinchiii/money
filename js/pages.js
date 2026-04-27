@@ -1,7 +1,7 @@
 const Pages = (() => {
   let currentMonth = new Date().getMonth();
   let currentYear = new Date().getFullYear();
-  let walletFilter = 'shared'; // 'shared' | 'personal'
+  let walletFilter = 'shared'; // 'shared' | 'house_fund' | 'personal'
   let cardViewId = null;
   let txViewMode = 'list';   // 'list' | 'calendar' | 'chart'
   let calendarSelectedDate = null;
@@ -88,6 +88,8 @@ const Pages = (() => {
     const sharedRecent = allTxs
       .filter(tx => tx.walletType === 'shared' && tx.date >= weekStr)
       .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const houseFundTxs = allTxs.filter(tx => tx.walletType === 'house_fund');
+    const houseFundBalance = houseFundTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
 
     return `
       <div class="user-greeting">
@@ -99,6 +101,12 @@ const Pages = (() => {
         <span class="quick-add-icon">+</span>
         <span>快速記帳</span>
       </button>
+
+      <div class="card" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')" style="cursor:pointer">
+        <div class="card-title">🏠 買房基金</div>
+        <div style="font-size:24px;font-weight:800;color:var(--primary);padding:4px 0">${Utils.formatAmount(houseFundBalance)}</div>
+        <div style="font-size:12px;color:var(--text-muted)">點擊查看明細</div>
+      </div>
 
       ${upcomingBills.length > 0 ? `
         <div class="card">
@@ -136,6 +144,7 @@ const Pages = (() => {
         if (Store.isAdvancedByMe(tx)) return true;
         return false;
       }
+      if (walletFilter === 'house_fund') return tx.walletType === 'house_fund';
       return tx.walletType === 'shared';
     });
   }
@@ -151,7 +160,7 @@ const Pages = (() => {
     const balance = totalIncome - totalExpense;
 
     let content = '';
-    if (walletFilter !== 'personal' && txViewMode === 'list') {
+    if ((walletFilter === 'shared' || walletFilter === 'house_fund') && txViewMode === 'list') {
       content = renderChatView(filtered);
     } else if (txViewMode === 'calendar') {
       content = renderCalendarView(filtered);
@@ -161,7 +170,7 @@ const Pages = (() => {
       content = renderListView(groups);
     }
 
-    const balanceLabel = walletFilter === 'personal' ? '我的結餘' : '共同結餘';
+    const balanceLabel = walletFilter === 'personal' ? '我的結餘' : walletFilter === 'house_fund' ? '買房基金結餘' : '共同結餘';
 
     return `
       <div class="month-nav">
@@ -192,9 +201,13 @@ const Pages = (() => {
       </div>
 
       <div class="ledger-tabs">
-        <button class="ledger-tab ${walletFilter !== 'personal' ? 'active' : ''}" onclick="Pages.setWalletFilter('shared')">
+        <button class="ledger-tab ${walletFilter === 'shared' ? 'active' : ''}" onclick="Pages.setWalletFilter('shared')">
           <span class="ledger-tab-icon">💑</span>
           <span class="ledger-tab-name">共同帳本</span>
+        </button>
+        <button class="ledger-tab ${walletFilter === 'house_fund' ? 'active' : ''}" onclick="Pages.setWalletFilter('house_fund')">
+          <span class="ledger-tab-icon">🏠</span>
+          <span class="ledger-tab-name">買房基金</span>
         </button>
         <button class="ledger-tab ${walletFilter === 'personal' ? 'active' : ''}" onclick="Pages.setWalletFilter('personal')">
           <span class="ledger-tab-icon">🔒</span>
@@ -531,6 +544,7 @@ const Pages = (() => {
     const type = editTx?.type || addTxType;
     const categories = type === 'income' ? Store.INCOME_CATEGORIES : Store.EXPENSE_CATEGORIES;
     const defaultWallet = editTx ? editTx.walletType
+      : walletFilter === 'house_fund' ? 'house_fund'
       : walletFilter === 'shared' ? 'shared'
       : 'personal';
     const isPersonal = defaultWallet === 'personal';
@@ -553,26 +567,29 @@ const Pages = (() => {
         <div class="form-field">
           <label>記到哪本帳？</label>
           <div class="wallet-toggle">
-            <button type="button" class="wallet-toggle-btn ${!isPersonal ? 'active-shared' : ''}"
+            <button type="button" class="wallet-toggle-btn ${defaultWallet === 'shared' ? 'active-shared' : ''}"
               onclick="Pages.setAddWallet('shared')">
               <span class="wt-icon">💑</span>
               <span class="wt-label">共同帳本</span>
-              <span class="wt-hint">兩人都看得到</span>
+            </button>
+            <button type="button" class="wallet-toggle-btn ${defaultWallet === 'house_fund' ? 'active-shared' : ''}"
+              onclick="Pages.setAddWallet('house_fund')">
+              <span class="wt-icon">🏠</span>
+              <span class="wt-label">買房基金</span>
             </button>
             <button type="button" class="wallet-toggle-btn ${isPersonal ? 'active-personal' : ''}"
               onclick="Pages.setAddWallet('personal')">
               <span class="wt-icon">🔒</span>
               <span class="wt-label">私人帳本</span>
-              <span class="wt-hint">只有${meInfo.name}看得到</span>
             </button>
           </div>
           <input type="hidden" id="tx-wallet" value="${defaultWallet}">
         </div>
 
         <div class="form-field" id="payer-field" style="${isPersonal ? 'display:none' : ''}">
-          <label>由誰支出</label>
+          <label>${type === 'income' ? (defaultWallet === 'house_fund' ? '誰存入買房基金' : '誰放入共同錢包') : '由誰支出'}</label>
           <select id="tx-user" onchange="Pages.onPayerChange()">
-            <option value="shared_wallet">💩 共用錢包</option>
+            ${type === 'expense' ? '<option value="shared_wallet">💩 共用錢包</option>' : ''}
             ${settings.users.map(u => `
               <option value="${u.id}" ${defaultPayer === u.id ? 'selected' : ''}>${u.emoji} ${u.name}</option>
             `).join('')}
@@ -632,13 +649,19 @@ const Pages = (() => {
   function setAddWallet(wallet) {
     document.getElementById('tx-wallet').value = wallet;
     const payerField = document.getElementById('payer-field');
+    const cardField = document.getElementById('card-field');
     const btns = document.querySelectorAll('.wallet-toggle-btn');
     btns.forEach(b => b.classList.remove('active-shared', 'active-personal'));
 
     if (wallet === 'personal') {
-      btns[1].classList.add('active-personal');
+      btns[2].classList.add('active-personal');
       payerField.style.display = 'none';
+      if (cardField) cardField.style.display = '';
       updateCardOptions(Store.getCurrentUser());
+    } else if (wallet === 'house_fund') {
+      btns[1].classList.add('active-shared');
+      payerField.style.display = '';
+      if (cardField) cardField.style.display = 'none';
     } else {
       btns[0].classList.add('active-shared');
       payerField.style.display = '';
@@ -1136,7 +1159,7 @@ const Pages = (() => {
       </div>
       <div class="detail-row">
         <div class="detail-label">錢包</div>
-        <div class="detail-value">${tx.walletType === 'shared' ? '💑 共用錢包' : '👤 個人'}</div>
+        <div class="detail-value">${tx.walletType === 'house_fund' ? '🏠 買房基金' : tx.walletType === 'shared' ? '💑 共用錢包' : '👤 個人'}</div>
       </div>
       ${card ? `
         <div class="detail-row">
