@@ -81,13 +81,11 @@ const Pages = (() => {
       return { card, ...info, unpaid };
     }).filter(b => b.unpaid > 0).sort((a, b) => a.payDate - b.payDate);
 
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const weekStr = oneWeekAgo.toISOString().slice(0, 10);
     const allTxs = Store.getVisibleTransactions();
     const sharedRecent = allTxs
-      .filter(tx => tx.walletType === 'shared' && tx.date >= weekStr)
-      .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+      .filter(tx => tx.walletType === 'shared')
+      .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 5);
     const houseFundTxs = allTxs.filter(tx => tx.walletType === 'house_fund');
     const houseFundBalance = houseFundTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
 
@@ -125,10 +123,26 @@ const Pages = (() => {
       ` : ''}
 
       <div class="card">
-        <div class="card-title">共同帳本動態</div>
+        <div class="card-title">明細</div>
         ${sharedRecent.length > 0
-          ? renderChatView(sharedRecent)
-          : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">最近 7 天沒有共同支出紀錄</div>'
+          ? sharedRecent.map(tx => {
+              const cat = Utils.getCategoryInfo(tx.category, tx.type);
+              const user = Utils.getUserInfo(tx.userId);
+              const sign = tx.type === 'income' ? '+' : '-';
+              const typeLabel = tx.type === 'income' ? '收入' : '支出';
+              return `
+                <div class="tx-item" onclick="Pages.showTxDetail('${tx.id}')">
+                  <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+                  <div class="tx-details">
+                    <div class="tx-desc">${tx.description || cat.name}</div>
+                    <div class="tx-meta">
+                      <span class="tx-meta-text">${user.emoji} ${user.name}・${typeLabel}・${Utils.formatDate(tx.date)}</span>
+                    </div>
+                  </div>
+                  <div class="tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
+                </div>`;
+            }).join('')
+          : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">還沒有共同支出紀錄</div>'
         }
       </div>
     `;
