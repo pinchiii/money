@@ -1523,23 +1523,26 @@ const Pages = (() => {
     if (editId) {
       Store.updateTransaction(editId, tx);
       Utils.showToast('已更新紀錄');
-    } else {
-      Store.addTransaction(tx);
+      editingTx = null;
+      App.refresh();
+      return;
+    }
 
-      if (type === 'income' && walletType === 'personal' && accountId) {
-        Store.adjustAccountBalance(accountId, amount);
-        const account = Store.getAccounts().find(a => a.id === accountId);
-        Utils.showToast(`已記錄！${account ? account.name : '帳戶'}餘額已更新`);
-      } else if (tx.walletType === 'shared' && tx.creditCardId) {
-        const card = Store.getCreditCards().find(c => c.id === tx.creditCardId);
-        if (card) {
-          Utils.showToast(`已記錄！同時計入 ${card.name} 帳單`);
-        } else {
-          Utils.showToast('已新增紀錄！');
-        }
+    Store.addTransaction(tx);
+
+    if (type === 'income' && walletType === 'personal' && accountId) {
+      Store.adjustAccountBalance(accountId, amount);
+      const account = Store.getAccounts().find(a => a.id === accountId);
+      Utils.showToast(`已記錄！${account ? account.name : '帳戶'}餘額已更新`);
+    } else if (tx.walletType === 'shared' && tx.creditCardId) {
+      const card = Store.getCreditCards().find(c => c.id === tx.creditCardId);
+      if (card) {
+        Utils.showToast(`已記錄！同時計入 ${card.name} 帳單`);
       } else {
         Utils.showToast('已新增紀錄！');
       }
+    } else {
+      Utils.showToast('已新增紀錄！');
     }
 
     editingTx = null;

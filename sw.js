@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pinchi-v8';
+const CACHE_NAME = 'pinchi-v9';
 const ASSETS = [
   '/money/',
   '/money/index.html',
