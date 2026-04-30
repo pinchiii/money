@@ -137,16 +137,72 @@ const Store = (() => {
     return { id: row.cat_id, icon: row.icon, name: row.name };
   }
 
+  function dbStockToApp(row) {
+    return {
+      id: row.id,
+      symbol: row.symbol,
+      name: row.name || '',
+      market: row.market || 'us',
+      shares: Number(row.shares || 0),
+      avgCost: Number(row.avg_cost || 0),
+      currentPrice: Number(row.current_price || 0),
+      lastUpdated: row.last_updated || null,
+      ownerId: row.owner_id,
+    };
+  }
+
+  function appStockToDb(stock) {
+    return {
+      id: stock.id,
+      symbol: stock.symbol,
+      name: stock.name || '',
+      market: stock.market || 'us',
+      shares: stock.shares || 0,
+      avg_cost: stock.avgCost || 0,
+      current_price: stock.currentPrice || 0,
+      last_updated: stock.lastUpdated || null,
+      owner_id: stock.ownerId,
+    };
+  }
+
+  function dbStockTxToApp(row) {
+    return {
+      id: row.id,
+      stockId: row.stock_id,
+      symbol: row.symbol,
+      type: row.type,
+      shares: Number(row.shares),
+      price: Number(row.price),
+      date: row.date,
+      createdAt: row.created_at,
+    };
+  }
+
+  function appStockTxToDb(tx) {
+    return {
+      id: tx.id,
+      stock_id: tx.stockId,
+      symbol: tx.symbol,
+      type: tx.type,
+      shares: tx.shares,
+      price: tx.price,
+      date: tx.date,
+      created_at: tx.createdAt,
+    };
+  }
+
   // ── Sync from Supabase on startup ──
   async function syncFromCloud() {
     try {
-      const [txRes, cardRes, accRes, settRes, catRes, billRes] = await Promise.all([
+      const [txRes, cardRes, accRes, settRes, catRes, billRes, stockRes, stockTxRes] = await Promise.all([
         db.from('transactions').select('*').order('created_at', { ascending: false }),
         db.from('credit_cards').select('*'),
         db.from('accounts').select('*'),
         db.from('settings').select('*').eq('id', 'global').single(),
         db.from('categories').select('*'),
         db.from('auto_bills').select('*'),
+        db.from('stocks').select('*'),
+        db.from('stock_transactions').select('*').order('created_at', { ascending: false }),
       ]);
 
       if (txRes.data) {
@@ -160,6 +216,9 @@ const Store = (() => {
       }
       if (settRes.data) {
         saveCache(CACHE.settings, settRes.data.data);
+        if (settRes.data.data?.finnhubKey) {
+          saveCache(CACHE.finnhubKey, settRes.data.data.finnhubKey);
+        }
       }
       if (catRes.data) {
         const expCats = catRes.data.filter(c => c.type === 'expense').map(dbCatToApp);
@@ -169,6 +228,12 @@ const Store = (() => {
       }
       if (billRes.data) {
         saveCache(CACHE.autoBills, billRes.data.map(b => b.bill_key));
+      }
+      if (stockRes.data) {
+        saveCache(CACHE.stocks, stockRes.data.map(dbStockToApp));
+      }
+      if (stockTxRes.data) {
+        saveCache(CACHE.stockTxs, stockTxRes.data.map(dbStockTxToApp));
       }
       return true;
     } catch (e) {
@@ -542,6 +607,7 @@ const Store = (() => {
       stock.lastUpdated = null;
       list.push(stock);
       saveCache(CACHE.stocks, list);
+      db.from('stocks').insert(appStockToDb(stock)).then();
       return stock;
     },
     updateStock(id, updates) {
@@ -550,6 +616,7 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.stocks, list);
+        db.from('stocks').update(appStockToDb(list[idx])).eq('id', id).then();
       }
     },
     deleteStock(id) {
@@ -557,6 +624,8 @@ const Store = (() => {
       saveCache(CACHE.stocks, list);
       const txs = (loadCache(CACHE.stockTxs) || []).filter(t => t.stockId !== id);
       saveCache(CACHE.stockTxs, txs);
+      db.from('stock_transactions').delete().eq('stock_id', id).then();
+      db.from('stocks').delete().eq('id', id).then();
     },
 
     getStockTransactions(stockId) {
@@ -570,6 +639,7 @@ const Store = (() => {
       tx.createdAt = new Date().toISOString();
       txs.unshift(tx);
       saveCache(CACHE.stockTxs, txs);
+      db.from('stock_transactions').insert(appStockTxToDb(tx)).then();
 
       const stock = this.getAllStocks().find(s => s.id === tx.stockId);
       if (stock) {
@@ -591,6 +661,9 @@ const Store = (() => {
     },
     setFinnhubKey(key) {
       saveCache(CACHE.finnhubKey, key);
+      const settings = this.getSettings();
+      settings.finnhubKey = key;
+      this.saveSettings(settings);
     },
 
     getStockTotalValue() {
