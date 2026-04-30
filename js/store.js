@@ -8,6 +8,9 @@ const Store = (() => {
     autoBills: 'pinchi_auto_bills',
     expenseCats: 'pinchi_expense_categories',
     incomeCats: 'pinchi_income_categories',
+    stocks: 'pinchi_stocks',
+    stockTxs: 'pinchi_stock_txs',
+    finnhubKey: 'pinchi_finnhub_key',
   };
 
   const DEFAULT_SETTINGS = {
@@ -523,6 +526,80 @@ const Store = (() => {
       return newBills;
     },
 
+    // ── Stocks ──
+    getStocks() {
+      const me = this.getCurrentUser();
+      return (loadCache(CACHE.stocks) || []).filter(s => s.ownerId === me);
+    },
+    getAllStocks() {
+      return loadCache(CACHE.stocks) || [];
+    },
+    addStock(stock) {
+      const list = this.getAllStocks();
+      stock.id = uid();
+      stock.ownerId = this.getCurrentUser();
+      stock.currentPrice = stock.avgCost || 0;
+      stock.lastUpdated = null;
+      list.push(stock);
+      saveCache(CACHE.stocks, list);
+      return stock;
+    },
+    updateStock(id, updates) {
+      const list = this.getAllStocks();
+      const idx = list.findIndex(s => s.id === id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...updates };
+        saveCache(CACHE.stocks, list);
+      }
+    },
+    deleteStock(id) {
+      const list = this.getAllStocks().filter(s => s.id !== id);
+      saveCache(CACHE.stocks, list);
+      const txs = (loadCache(CACHE.stockTxs) || []).filter(t => t.stockId !== id);
+      saveCache(CACHE.stockTxs, txs);
+    },
+
+    getStockTransactions(stockId) {
+      return (loadCache(CACHE.stockTxs) || [])
+        .filter(t => t.stockId === stockId)
+        .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+    },
+    addStockTransaction(tx) {
+      const txs = loadCache(CACHE.stockTxs) || [];
+      tx.id = uid();
+      tx.createdAt = new Date().toISOString();
+      txs.unshift(tx);
+      saveCache(CACHE.stockTxs, txs);
+
+      const stock = this.getAllStocks().find(s => s.id === tx.stockId);
+      if (stock) {
+        if (tx.type === 'buy') {
+          const totalCost = stock.avgCost * stock.shares + tx.price * tx.shares;
+          stock.shares += tx.shares;
+          stock.avgCost = stock.shares > 0 ? totalCost / stock.shares : 0;
+        } else {
+          stock.shares -= tx.shares;
+          if (stock.shares < 0) stock.shares = 0;
+        }
+        this.updateStock(stock.id, { shares: stock.shares, avgCost: stock.avgCost });
+      }
+      return tx;
+    },
+
+    getFinnhubKey() {
+      return loadCache(CACHE.finnhubKey) || '';
+    },
+    setFinnhubKey(key) {
+      saveCache(CACHE.finnhubKey, key);
+    },
+
+    getStockTotalValue() {
+      return this.getStocks().reduce((sum, s) => sum + (s.currentPrice || 0) * s.shares, 0);
+    },
+    getStockTotalCost() {
+      return this.getStocks().reduce((sum, s) => sum + s.avgCost * s.shares, 0);
+    },
+
     exportData() {
       return JSON.stringify({
         transactions: this.getTransactions(),
@@ -532,6 +609,8 @@ const Store = (() => {
         autoBills: this.getProcessedBills(),
         expenseCategories: getExpenseCategories(),
         incomeCategories: getIncomeCategories(),
+        stocks: this.getAllStocks(),
+        stockTransactions: loadCache(CACHE.stockTxs) || [],
       }, null, 2);
     },
 

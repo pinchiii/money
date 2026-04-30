@@ -9,8 +9,9 @@ const App = (() => {
     dashboard: '首頁',
     transactions: '明細',
     add: '記帳',
-    wallet: '錢包',
-    cards: '我的卡片',
+    wallet: '個人資產',
+    creditCards: '信用卡',
+    cardStatement: '我的卡片',
     settings: '設定',
   };
 
@@ -20,7 +21,8 @@ const App = (() => {
     transactions: Pages.renderTransactions,
     add: Pages.renderAddTransaction,
     wallet: Pages.renderWallet,
-    cards: Pages.renderCards,
+    creditCards: Pages.renderCreditCards,
+    cardStatement: Pages.renderCards,
     settings: Pages.renderSettings,
   };
 
@@ -104,7 +106,9 @@ const App = (() => {
     }
 
     document.querySelectorAll('.tab-item').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.page === page);
+      const tabPage = tab.dataset.page;
+      const isActive = tabPage === page || (tabPage === 'creditCards' && page === 'cardStatement');
+      tab.classList.toggle('active', isActive);
     });
 
     window.scrollTo(0, 0);

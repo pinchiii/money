@@ -73,8 +73,28 @@ const Utils = (() => {
     'linear-gradient(135deg, #2D3436, #636E72)',
   ];
 
+  function formatUSD(amount) {
+    return `$${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function formatStockPrice(amount, market) {
+    if (market === 'tse' || market === 'otc') {
+      return `NT$${Number(amount).toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    }
+    return formatUSD(amount);
+  }
+
+  function getMarketLabel(market) {
+    if (market === 'tse') return '上市';
+    if (market === 'otc') return '上櫃';
+    return '美股';
+  }
+
   return {
     formatAmount,
+    formatUSD,
+    formatStockPrice,
+    getMarketLabel,
     formatDate,
     formatFullDate,
     getMonthLabel,

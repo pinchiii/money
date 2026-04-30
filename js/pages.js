@@ -99,6 +99,14 @@ const Pages = (() => {
     const houseFundTxs = allTxs.filter(tx => tx.walletType === 'house_fund');
     const myHouseFundExpense = houseFundTxs.filter(tx => tx.type === 'income' && tx.userId === me).reduce((s, tx) => s + tx.amount, 0);
 
+    const myStocks = Store.getStocks();
+    const dashUsStocks = myStocks.filter(s => (s.market || 'us') === 'us');
+    const dashTwStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
+    const dashUsValue = dashUsStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const dashUsCost = dashUsStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+    const dashTwValue = dashTwStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const dashTwCost = dashTwStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+
     const renderTxList = (txs, emptyMsg) => {
       if (txs.length === 0) return `<div class="dash-empty">${emptyMsg}</div>`;
       return txs.map(tx => {
@@ -148,6 +156,26 @@ const Pages = (() => {
           </div>
         </div>
       </div>
+
+      ${myStocks.length > 0 ? `
+        <div class="card" onclick="App.navigate('wallet')" style="cursor:pointer">
+          <div class="card-title">📈 股票資產</div>
+          <div class="asset-grid">
+            ${dashUsStocks.length > 0 ? `
+              <div class="asset-block ${dashUsValue - dashUsCost >= 0 ? 'positive' : 'negative'}">
+                <div class="asset-label">🇺🇸 美股市值</div>
+                <div class="asset-value">${Utils.formatUSD(dashUsValue)}</div>
+              </div>
+            ` : ''}
+            ${dashTwStocks.length > 0 ? `
+              <div class="asset-block ${dashTwValue - dashTwCost >= 0 ? 'positive' : 'negative'}">
+                <div class="asset-label">🇹🇼 台股市值</div>
+                <div class="asset-value">${Utils.formatStockPrice(dashTwValue, 'tse')}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      ` : ''}
 
       ${upcomingBills.length > 0 ? `
         <div class="card">
@@ -758,17 +786,18 @@ const Pages = (() => {
       userCards.map(c => `<option value="${c.id}" ${currentVal === c.id ? 'selected' : ''}>💳 ${c.name}</option>`).join('');
   }
 
-  // ──────────── Credit Cards ────────────
-  function renderCards() {
-    const me = Store.getCurrentUser();
+  // ──────────── Credit Cards (獨立頁面) ────────────
+  function renderCreditCards() {
     const myCards = Store.getMyCreditCards();
-
-    if (cardViewId) {
-      return renderCardStatement(cardViewId);
-    }
+    const totalUnpaid = myCards.reduce((s, c) => s + Store.getCardUnpaidAmount(c.id), 0);
 
     return `
-      <div class="card-section-title">我的信用卡</div>
+      ${myCards.length > 0 ? `
+        <div class="card" style="text-align:center;padding:20px">
+          <div class="card-title">待繳總額</div>
+          <div style="font-size:28px;font-weight:800;color:var(--expense-color)">${Utils.formatAmount(totalUnpaid)}</div>
+        </div>
+      ` : ''}
 
       ${myCards.length > 0 ? myCards.map(card => {
         const unpaid = Store.getCardUnpaidAmount(card.id);
@@ -791,12 +820,21 @@ const Pages = (() => {
             </div>
           </div>
         `;
-      }).join('') : ''}
+      }).join('') : `
+        <div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:14px">
+          還沒有信用卡，點下方按鈕新增
+        </div>
+      `}
 
-      <button class="add-card-btn" onclick="Pages.showAddCard()">
-        + 新增信用卡
-      </button>
+      <button class="add-card-btn" onclick="Pages.showAddCard()">+ 新增信用卡</button>
     `;
+  }
+
+  function renderCards() {
+    if (cardViewId) {
+      return renderCardStatement(cardViewId);
+    }
+    return renderCreditCards();
   }
 
   function renderCardStatement(cardId) {
@@ -812,7 +850,7 @@ const Pages = (() => {
     const groups = Utils.groupByDate(txs);
 
     return `
-      <button class="back-btn" onclick="Pages.closeCardStatement()">← 返回錢包</button>
+      <button class="back-btn" onclick="Pages.closeCardStatement()">← 返回信用卡</button>
 
       <div class="credit-card-visual" style="background:${card.color}" onclick="Pages.showCardDetail('${card.id}')">
         <div>
@@ -874,20 +912,61 @@ const Pages = (() => {
 
   function viewCardStatement(cardId) {
     cardViewId = cardId;
-    App.navigate('cards');
+    App.navigate('cardStatement');
   }
 
   function closeCardStatement() {
     cardViewId = null;
-    App.navigate('wallet');
+    App.navigate('creditCards');
   }
 
-  // ──────────── Wallet (錢包：帳戶 + 信用卡) ────────────
+  // ──────────── Wallet (個人資產：帳戶 + 股票庫存) ────────────
   function renderWallet() {
     const me = Store.getCurrentUser();
     const myAccounts = Store.getMyAccounts();
-    const myCards = Store.getMyCreditCards();
     const totalBalance = myAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    const myStocks = Store.getStocks();
+    const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
+    const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
+    const usTotalValue = usStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const usTotalCost = usStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+    const twTotalValue = twStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const twTotalCost = twStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+    const usPnl = usTotalValue - usTotalCost;
+    const twPnl = twTotalValue - twTotalCost;
+
+    const renderStockGroup = (stocks, label, fmtFn) => {
+      if (stocks.length === 0) return '';
+      const totalVal = stocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+      const totalCost = stocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+      const pnl = totalVal - totalCost;
+      return stocks.map(stock => {
+        const m = stock.market || 'us';
+        const mktVal = stock.currentPrice * stock.shares;
+        const cost = stock.avgCost * stock.shares;
+        const spnl = mktVal - cost;
+        const pnlPct = cost > 0 ? (spnl / cost * 100) : 0;
+        const fmt = (v) => Utils.formatStockPrice(v, m);
+        return `
+          <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
+            <div class="stock-card-top">
+              <div class="stock-card-info">
+                <div class="stock-card-symbol">${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+                <div class="stock-card-name">${stock.name || stock.symbol}</div>
+              </div>
+              <div class="stock-card-price">
+                <div class="stock-card-current">${fmt(stock.currentPrice)}</div>
+                ${stock.lastUpdated ? `<div class="stock-card-updated">${new Date(stock.lastUpdated).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+              </div>
+            </div>
+            <div class="stock-card-bottom">
+              <span>${stock.shares} 股 ・ 均價 ${fmt(stock.avgCost)}</span>
+              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${spnl >= 0 ? '+' : ''}${fmt(spnl)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    };
 
     return `
       <div class="card" style="text-align:center;padding:20px">
@@ -897,57 +976,491 @@ const Pages = (() => {
 
       <div class="wallet-section-title">帳戶</div>
 
-      ${myAccounts.map(account => {
-        const linkedCards = myCards.filter(c => c.linkedAccountId === account.id);
-        return `
-          <div class="account-card" onclick="Pages.showEditAccount('${account.id}')">
-            <div class="account-card-top">
-              <div class="account-card-icon">${account.icon}</div>
-              <div class="account-card-info">
-                <div class="account-card-name">${account.name}</div>
-                ${linkedCards.length > 0 ? `<div class="account-card-linked">綁定：${linkedCards.map(c => c.name).join('、')}</div>` : ''}
-              </div>
-              <div class="account-card-balance ${(account.balance || 0) >= 0 ? 'positive' : 'negative'}">
-                ${Utils.formatAmount(account.balance || 0)}
-              </div>
+      ${myAccounts.map(account => `
+        <div class="account-card" onclick="Pages.showEditAccount('${account.id}')">
+          <div class="account-card-top">
+            <div class="account-card-icon">${account.icon}</div>
+            <div class="account-card-info">
+              <div class="account-card-name">${account.name}</div>
             </div>
-            <div class="account-card-actions">
-              <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'income')">+ 收入入帳</button>
-              <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'expense')">- 手動扣款</button>
-              <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'set')">✏️ 更新餘額</button>
+            <div class="account-card-balance ${(account.balance || 0) >= 0 ? 'positive' : 'negative'}">
+              ${Utils.formatAmount(account.balance || 0)}
             </div>
           </div>
-        `;
-      }).join('')}
+          <div class="account-card-actions">
+            <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'income')">+ 收入入帳</button>
+            <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'expense')">- 手動扣款</button>
+            <button class="account-action-btn" onclick="event.stopPropagation();Pages.showAdjustBalance('${account.id}', 'set')">✏️ 更新餘額</button>
+          </div>
+        </div>
+      `).join('')}
 
       <button class="add-card-btn" onclick="Pages.showAddAccount()">+ 新增帳戶</button>
 
-      <div class="wallet-section-title" style="margin-top:20px">信用卡</div>
+      <!-- 股票庫存 - 收合面板 -->
+      <div class="wallet-section-title" style="margin-top:20px">
+        股票庫存
+        ${myStocks.length > 0 ? `<button class="stock-refresh-btn" onclick="Pages.refreshAllStockPrices()">🔄 更新報價</button>` : ''}
+      </div>
 
-      ${myCards.length > 0 ? myCards.map(card => {
-        const unpaid = Store.getCardUnpaidAmount(card.id);
-        return `
-          <div class="credit-card-visual" style="background:${card.color}" onclick="Pages.viewCardStatement('${card.id}')">
-            <div>
-              <div class="cc-name">${card.name}</div>
-              <div class="cc-number">•••• •••• •••• ${card.lastFourDigits || '****'}</div>
+      ${myStocks.length > 0 ? `
+        ${usStocks.length > 0 ? `
+          <div class="collapsible-panel">
+            <div class="collapsible-header" onclick="Pages.togglePanel(this)">
+              <div class="collapsible-title">🇺🇸 美股 <span class="collapsible-count">${usStocks.length} 支</span></div>
+              <div class="collapsible-summary">
+                <span>市值 ${Utils.formatUSD(usTotalValue)}</span>
+                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatUSD(usPnl)}</span>
+              </div>
+              <div class="collapsible-arrow">▾</div>
             </div>
-            <div class="cc-bottom">
-              <div>
-                <div class="cc-label">結帳日 / 扣款日</div>
-                <div class="cc-value">${card.statementDay}號 / ${card.paymentDay}號</div>
+            <div class="collapsible-body collapsed">
+              <div class="stock-summary">
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">市值</div>
+                  <div class="stock-summary-value">${Utils.formatUSD(usTotalValue)}</div>
+                </div>
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">成本</div>
+                  <div class="stock-summary-value">${Utils.formatUSD(usTotalCost)}</div>
+                </div>
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">損益</div>
+                  <div class="stock-summary-value ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatUSD(usPnl)}</div>
+                </div>
               </div>
-              <div class="cc-unpaid">
-                <div class="cc-label">待繳金額</div>
-                <div class="cc-unpaid-amount">${Utils.formatAmount(unpaid)}</div>
-              </div>
+              ${renderStockGroup(usStocks)}
             </div>
           </div>
-        `;
-      }).join('') : ''}
+        ` : ''}
 
-      <button class="add-card-btn" onclick="Pages.showAddCard()">+ 新增信用卡</button>
+        ${twStocks.length > 0 ? `
+          <div class="collapsible-panel">
+            <div class="collapsible-header" onclick="Pages.togglePanel(this)">
+              <div class="collapsible-title">🇹🇼 台股 <span class="collapsible-count">${twStocks.length} 支</span></div>
+              <div class="collapsible-summary">
+                <span>市值 ${Utils.formatStockPrice(twTotalValue, 'tse')}</span>
+                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${twPnl >= 0 ? '+' : ''}${Utils.formatStockPrice(twPnl, 'tse')}</span>
+              </div>
+              <div class="collapsible-arrow">▾</div>
+            </div>
+            <div class="collapsible-body collapsed">
+              <div class="stock-summary">
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">市值</div>
+                  <div class="stock-summary-value">${Utils.formatStockPrice(twTotalValue, 'tse')}</div>
+                </div>
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">成本</div>
+                  <div class="stock-summary-value">${Utils.formatStockPrice(twTotalCost, 'tse')}</div>
+                </div>
+                <div class="stock-summary-item">
+                  <div class="stock-summary-label">損益</div>
+                  <div class="stock-summary-value ${twPnl >= 0 ? 'positive' : 'negative'}">${twPnl >= 0 ? '+' : ''}${Utils.formatStockPrice(twPnl, 'tse')}</div>
+                </div>
+              </div>
+              ${renderStockGroup(twStocks)}
+            </div>
+          </div>
+        ` : ''}
+      ` : `
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">
+          還沒有股票庫存，點「+ 新增股票」開始吧
+        </div>
+      `}
+
+      <button class="add-card-btn" onclick="Pages.showAddStock()">+ 新增股票</button>
     `;
+  }
+
+  function togglePanel(headerEl) {
+    const body = headerEl.nextElementSibling;
+    const arrow = headerEl.querySelector('.collapsible-arrow');
+    body.classList.toggle('collapsed');
+    arrow.classList.toggle('open');
+  }
+
+  // ──────────── Stock Functions ────────────
+  let _symbolLookupTimer = null;
+
+  function showAddStock(editStock) {
+    const isEdit = !!editStock;
+    const market = editStock?.market || 'us';
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title">${isEdit ? '編輯股票' : '新增股票'}</div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>市場</label>
+          <div class="market-toggle">
+            <button type="button" class="market-toggle-btn ${market === 'us' ? 'active' : ''}" onclick="Pages.switchMarket('us')" ${isEdit ? 'disabled' : ''}>🇺🇸 美股</button>
+            <button type="button" class="market-toggle-btn ${market === 'tse' ? 'active' : ''}" onclick="Pages.switchMarket('tse')" ${isEdit ? 'disabled' : ''}>🇹🇼 上市</button>
+            <button type="button" class="market-toggle-btn ${market === 'otc' ? 'active' : ''}" onclick="Pages.switchMarket('otc')" ${isEdit ? 'disabled' : ''}>🇹🇼 上櫃</button>
+          </div>
+          <input type="hidden" id="stock-market" value="${market}">
+        </div>
+        <div class="form-field">
+          <label id="stock-symbol-label">股票代號（${market === 'us' ? '例：AAPL、TSLA' : '例：2330、2317'}）</label>
+          <input type="text" id="stock-symbol" placeholder="${market === 'us' ? 'AAPL' : '2330'}" value="${editStock?.symbol || ''}" style="text-transform:uppercase" ${isEdit ? 'readonly' : ''}>
+          <div id="stock-symbol-status" class="stock-symbol-status"></div>
+        </div>
+        <div class="form-field">
+          <label>股票名稱</label>
+          <input type="text" id="stock-name" placeholder="${market === 'us' ? 'Apple Inc.' : '台積電'}" value="${editStock?.name || ''}">
+        </div>
+        <div class="form-field">
+          <label>持有股數</label>
+          <input type="number" id="stock-shares" placeholder="0" inputmode="decimal" value="${editStock?.shares || ''}">
+        </div>
+        <div class="form-field">
+          <label id="stock-cost-label">平均成本（${market === 'us' ? 'USD' : 'TWD'}）</label>
+          <input type="number" id="stock-cost" placeholder="0.00" inputmode="decimal" step="0.01" value="${editStock?.avgCost || ''}">
+        </div>
+      </div>
+      <div class="modal-actions">
+        ${isEdit ? `<button class="btn btn-danger" onclick="Pages.deleteStock('${editStock.id}')">刪除</button>` : ''}
+        <button class="btn btn-primary" onclick="Pages.saveStock('${editStock?.id || ''}')">${isEdit ? '更新' : '新增'}</button>
+      </div>
+    `);
+
+    if (!isEdit) {
+      const symbolInput = document.getElementById('stock-symbol');
+      symbolInput.addEventListener('input', () => {
+        clearTimeout(_symbolLookupTimer);
+        const val = symbolInput.value.trim().toUpperCase();
+        if (val.length < 1) return;
+        _symbolLookupTimer = setTimeout(() => lookupStockName(val), 600);
+      });
+    }
+  }
+
+  async function lookupStockName(symbol) {
+    const market = document.getElementById('stock-market').value;
+    const statusEl = document.getElementById('stock-symbol-status');
+    const nameInput = document.getElementById('stock-name');
+    statusEl.textContent = '查詢中...';
+    statusEl.className = 'stock-symbol-status loading';
+
+    if (market === 'tse' || market === 'otc') {
+      const result = await fetchTWStockPrice(symbol, market);
+      if (result && result.name) {
+        nameInput.value = result.name;
+        statusEl.textContent = `✓ ${result.name}`;
+        statusEl.className = 'stock-symbol-status found';
+      } else {
+        statusEl.textContent = '找不到此代號';
+        statusEl.className = 'stock-symbol-status not-found';
+      }
+    } else {
+      const apiKey = Store.getFinnhubKey();
+      if (!apiKey) {
+        statusEl.textContent = '請先設定 Finnhub API Key';
+        statusEl.className = 'stock-symbol-status not-found';
+        return;
+      }
+      try {
+        const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`);
+        const data = await res.json();
+        if (data && data.name) {
+          nameInput.value = data.name;
+          statusEl.textContent = `✓ ${data.name}`;
+          statusEl.className = 'stock-symbol-status found';
+        } else {
+          statusEl.textContent = '找不到此代號';
+          statusEl.className = 'stock-symbol-status not-found';
+        }
+      } catch (e) {
+        statusEl.textContent = '查詢失敗';
+        statusEl.className = 'stock-symbol-status not-found';
+      }
+    }
+  }
+
+  function switchMarket(market) {
+    const btns = document.querySelectorAll('.market-toggle-btn');
+    btns.forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('stock-market').value = market;
+
+    const isTW = market === 'tse' || market === 'otc';
+    document.getElementById('stock-symbol-label').textContent =
+      isTW ? '股票代號（例：2330、2317）' : '股票代號（例：AAPL、TSLA）';
+    document.getElementById('stock-symbol').placeholder = isTW ? '2330' : 'AAPL';
+    document.getElementById('stock-name').placeholder = isTW ? '台積電' : 'Apple Inc.';
+    document.getElementById('stock-cost-label').textContent =
+      isTW ? '平均成本（TWD）' : '平均成本（USD）';
+
+    document.getElementById('stock-symbol').value = '';
+    document.getElementById('stock-name').value = '';
+    document.getElementById('stock-symbol-status').textContent = '';
+  }
+
+  function saveStock(editId) {
+    const symbol = document.getElementById('stock-symbol').value.trim().toUpperCase();
+    if (!symbol) { Utils.showToast('請輸入股票代號'); return; }
+
+    const market = document.getElementById('stock-market').value;
+    const stock = {
+      symbol,
+      market,
+      name: document.getElementById('stock-name').value.trim(),
+      shares: parseFloat(document.getElementById('stock-shares').value) || 0,
+      avgCost: parseFloat(document.getElementById('stock-cost').value) || 0,
+    };
+
+    if (editId) {
+      Store.updateStock(editId, stock);
+      Utils.showToast('已更新');
+    } else {
+      Store.addStock(stock);
+      Utils.showToast('已新增股票');
+    }
+
+    hideModal();
+    App.navigate('wallet');
+    fetchSingleStockPrice(stock);
+  }
+
+  function deleteStock(id) {
+    if (confirm('確定要刪除這支股票嗎？交易紀錄也會一併刪除。')) {
+      Store.deleteStock(id);
+      hideModal();
+      Utils.showToast('已刪除');
+      App.navigate('wallet');
+    }
+  }
+
+  function showStockDetail(stockId) {
+    const stocks = Store.getStocks();
+    const stock = stocks.find(s => s.id === stockId);
+    if (!stock) return;
+
+    const txs = Store.getStockTransactions(stockId);
+    const m = stock.market || 'us';
+    const fmt = (v) => Utils.formatStockPrice(v, m);
+    const mktVal = stock.currentPrice * stock.shares;
+    const cost = stock.avgCost * stock.shares;
+    const pnl = mktVal - cost;
+    const pnlPct = cost > 0 ? (pnl / cost * 100) : 0;
+
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title">📈 ${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <div class="stock-detail-hero">
+        <div class="stock-detail-name">${stock.name || stock.symbol}</div>
+        <div class="stock-detail-price">${fmt(stock.currentPrice)}</div>
+        ${stock.lastUpdated ? `<div class="stock-detail-time">更新於 ${new Date(stock.lastUpdated).toLocaleString('zh-TW')}</div>` : ''}
+      </div>
+
+      <div class="stock-detail-grid">
+        <div class="stock-detail-item">
+          <div class="stock-detail-label">持有股數</div>
+          <div class="stock-detail-val">${stock.shares}</div>
+        </div>
+        <div class="stock-detail-item">
+          <div class="stock-detail-label">平均成本</div>
+          <div class="stock-detail-val">${fmt(stock.avgCost)}</div>
+        </div>
+        <div class="stock-detail-item">
+          <div class="stock-detail-label">市值</div>
+          <div class="stock-detail-val">${fmt(mktVal)}</div>
+        </div>
+        <div class="stock-detail-item">
+          <div class="stock-detail-label">損益</div>
+          <div class="stock-detail-val ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${fmt(pnl)} (${pnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</div>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-bottom:16px">
+        <button class="btn btn-primary" onclick="Pages.showBuySellStock('${stockId}', 'buy')" style="flex:1">買進</button>
+        <button class="btn btn-danger" onclick="Pages.showBuySellStock('${stockId}', 'sell')" style="flex:1">賣出</button>
+      </div>
+
+      ${txs.length > 0 ? `
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">交易紀錄</div>
+        ${txs.slice(0, 10).map(tx => `
+          <div class="stock-tx-item">
+            <div class="stock-tx-type ${tx.type}">${tx.type === 'buy' ? '買進' : '賣出'}</div>
+            <div class="stock-tx-info">${tx.shares} 股 @ ${fmt(tx.price)}</div>
+            <div class="stock-tx-date">${Utils.formatDate(tx.date)}</div>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="Pages.showAddStock(Store.getStocks().find(s=>s.id==='${stockId}'))">✏️ 編輯</button>
+        <button class="btn btn-ghost" onclick="Pages.fetchAndRefresh('${stockId}')">🔄 更新報價</button>
+      </div>
+    `);
+  }
+
+  function showBuySellStock(stockId, type) {
+    const stock = Store.getStocks().find(s => s.id === stockId);
+    if (!stock) return;
+    const m = stock.market || 'us';
+    const currLabel = (m === 'tse' || m === 'otc') ? 'TWD' : 'USD';
+
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title">${type === 'buy' ? '買進' : '賣出'} ${stock.symbol}</div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>股數</label>
+          <input type="number" id="stx-shares" placeholder="${(m === 'tse' || m === 'otc') ? '1000' : '0'}" inputmode="decimal" autofocus>
+        </div>
+        <div class="form-field">
+          <label>成交價（${currLabel}）</label>
+          <input type="number" id="stx-price" placeholder="0.00" inputmode="decimal" step="0.01" value="${stock.currentPrice.toFixed(2)}">
+        </div>
+        <div class="form-field">
+          <label>日期</label>
+          <input type="date" id="stx-date" value="${Utils.todayStr()}">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ${type === 'buy' ? 'btn-primary' : 'btn-danger'}" onclick="Pages.saveStockTx('${stockId}', '${type}')">
+          確認${type === 'buy' ? '買進' : '賣出'}
+        </button>
+      </div>
+    `);
+    setTimeout(() => document.getElementById('stx-shares')?.focus(), 300);
+  }
+
+  function saveStockTx(stockId, type) {
+    const shares = parseFloat(document.getElementById('stx-shares').value);
+    if (!shares || shares <= 0) { Utils.showToast('請輸入股數'); return; }
+
+    const price = parseFloat(document.getElementById('stx-price').value);
+    if (!price || price <= 0) { Utils.showToast('請輸入成交價'); return; }
+
+    const stock = Store.getStocks().find(s => s.id === stockId);
+    if (type === 'sell' && stock && shares > stock.shares) {
+      Utils.showToast('賣出股數不能超過持有股數'); return;
+    }
+
+    Store.addStockTransaction({
+      stockId,
+      symbol: stock?.symbol || '',
+      type,
+      shares,
+      price,
+      date: document.getElementById('stx-date').value,
+    });
+
+    Utils.showToast(`已記錄${type === 'buy' ? '買進' : '賣出'}`);
+    hideModal();
+    App.navigate('wallet');
+  }
+
+  async function fetchUSStockPrice(symbol) {
+    const apiKey = Store.getFinnhubKey();
+    if (!apiKey) return null;
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+      const data = await res.json();
+      return (data.c && data.c > 0) ? data.c : null;
+    } catch (e) {
+      console.warn('US stock price fetch failed:', e);
+      return null;
+    }
+  }
+
+  async function fetchTWStockPrice(symbol, exchange) {
+    const ex = exchange === 'otc' ? 'otc' : 'tse';
+    const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${ex}_${symbol}.tw`;
+    const proxies = [
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    ];
+
+    for (const makeUrl of proxies) {
+      try {
+        const res = await fetch(makeUrl(twseUrl));
+        const data = await res.json();
+        if (data.msgArray && data.msgArray.length > 0) {
+          const price = parseFloat(data.msgArray[0].z);
+          if (!isNaN(price) && price > 0) return { price, name: data.msgArray[0].n };
+          const yesterdayPrice = parseFloat(data.msgArray[0].y);
+          if (!isNaN(yesterdayPrice) && yesterdayPrice > 0) return { price: yesterdayPrice, name: data.msgArray[0].n };
+        }
+      } catch (e) {
+        console.warn('TW stock proxy failed, trying next:', e);
+      }
+    }
+    return null;
+  }
+
+  async function fetchSingleStockPrice(stockInfo) {
+    const stock = stockInfo.id
+      ? stockInfo
+      : Store.getStocks().find(s => s.symbol === stockInfo.symbol && s.market === stockInfo.market);
+    if (!stock) return null;
+
+    const market = stock.market || 'us';
+    let price = null;
+
+    if (market === 'us') {
+      if (!Store.getFinnhubKey()) return null;
+      price = await fetchUSStockPrice(stock.symbol);
+    } else {
+      const result = await fetchTWStockPrice(stock.symbol, market);
+      if (result) {
+        price = result.price;
+        if (result.name && !stock.name) {
+          Store.updateStock(stock.id, { name: result.name });
+        }
+      }
+    }
+
+    if (price) {
+      Store.updateStock(stock.id, {
+        currentPrice: price,
+        lastUpdated: new Date().toISOString(),
+      });
+    }
+    return price;
+  }
+
+  async function refreshAllStockPrices() {
+    const stocks = Store.getStocks();
+    if (stocks.length === 0) return;
+
+    const usStocks = stocks.filter(s => (s.market || 'us') === 'us');
+    if (usStocks.length > 0 && !Store.getFinnhubKey()) {
+      Utils.showToast('美股需要 Finnhub API Key，台股可直接更新');
+    }
+
+    Utils.showToast('正在更新報價...');
+
+    let updated = 0;
+    for (const stock of stocks) {
+      const price = await fetchSingleStockPrice(stock);
+      if (price) updated++;
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    Utils.showToast(`已更新 ${updated} 支股票報價`);
+    App.navigate('wallet');
+  }
+
+  async function fetchAndRefresh(stockId) {
+    Utils.showToast('更新中...');
+    const stock = Store.getStocks().find(s => s.id === stockId);
+    if (!stock) return;
+    const price = await fetchSingleStockPrice(stock);
+    if (price) {
+      const currency = (stock.market === 'tse' || stock.market === 'otc') ? 'NT$' : '$';
+      Utils.showToast(`${stock.symbol} 最新價格 ${currency}${price.toFixed(2)}`);
+      showStockDetail(stockId);
+    } else {
+      Utils.showToast('更新失敗，請確認股票代號是否正確');
+    }
   }
 
   // ──────────── Accounts (kept for internal use) ────────────
@@ -1130,6 +1643,17 @@ const Pages = (() => {
             <div class="settings-item-label">收入分類</div>
           </div>
           <div class="settings-item-value">${Store.getIncomeCategories().length} 個</div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">股票設定</div>
+        <div class="settings-item" onclick="Pages.editFinnhubKey()">
+          <div class="settings-item-left">
+            <div class="settings-item-icon">📈</div>
+            <div class="settings-item-label">Finnhub API Key（美股）</div>
+          </div>
+          <div class="settings-item-value">${Store.getFinnhubKey() ? '已設定' : '未設定'}</div>
         </div>
       </div>
 
@@ -1580,7 +2104,7 @@ const Pages = (() => {
 
     hideModal();
     cardViewId = null;
-    App.navigate('wallet');
+    App.navigate('creditCards');
   }
 
   function deleteTx(id) {
@@ -1598,7 +2122,7 @@ const Pages = (() => {
       hideModal();
       cardViewId = null;
       Utils.showToast('已刪除卡片');
-      App.navigate('wallet');
+      App.navigate('creditCards');
     }
   }
 
@@ -1709,6 +2233,38 @@ const Pages = (() => {
     Store.saveSettings(settings);
     hideModal();
     Utils.showToast(newPin ? 'PIN 碼已設定' : 'PIN 碼已移除');
+    App.navigate('settings');
+  }
+
+  function editFinnhubKey() {
+    const currentKey = Store.getFinnhubKey();
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title">📈 Finnhub API Key</div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+        用於自動抓取<strong>美股</strong>即時報價（台股不需要此 Key）。<br>
+        免費申請：<a href="https://finnhub.io" target="_blank" style="color:var(--primary)">finnhub.io</a> 註冊後即可取得。
+      </p>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>API Key</label>
+          <input type="text" id="finnhub-key" placeholder="輸入你的 Finnhub API Key" value="${currentKey}">
+        </div>
+      </div>
+      <div class="modal-actions">
+        ${currentKey ? `<button class="btn btn-ghost" onclick="Store.setFinnhubKey('');Pages.hideModal();Utils.showToast('已移除');App.navigate('settings')">移除</button>` : ''}
+        <button class="btn btn-primary" onclick="Pages.saveFinnhubKey()">儲存</button>
+      </div>
+    `);
+  }
+
+  function saveFinnhubKey() {
+    const key = document.getElementById('finnhub-key').value.trim();
+    Store.setFinnhubKey(key);
+    hideModal();
+    Utils.showToast(key ? 'API Key 已儲存' : 'API Key 已移除');
     App.navigate('settings');
   }
 
@@ -2122,6 +2678,8 @@ const Pages = (() => {
     saveUser,
     editPin,
     savePin,
+    editFinnhubKey,
+    saveFinnhubKey,
     exportData,
     importData,
     showNotionImport,
@@ -2131,6 +2689,17 @@ const Pages = (() => {
     switchTxType,
     prevMonth,
     nextMonth,
+    showAddStock: (s) => showAddStock(s),
+    saveStock,
+    deleteStock,
+    showStockDetail,
+    showBuySellStock,
+    saveStockTx,
+    refreshAllStockPrices,
+    fetchAndRefresh,
+    switchMarket,
+    togglePanel,
+    renderCreditCards,
     setWalletFilter,
     setDashboardTab,
     setViewMode,
