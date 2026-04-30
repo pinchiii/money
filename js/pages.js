@@ -42,7 +42,7 @@ const Pages = (() => {
         <div class="form-grid">
           <div class="form-field">
             <input type="password" id="login-pin" placeholder="輸入 PIN 碼" inputmode="numeric"
-              maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px;" autofocus>
+              maxlength="6" class="pin-input" autofocus>
           </div>
         </div>
         <div class="modal-actions">
@@ -1667,12 +1667,12 @@ const Pages = (() => {
           <div class="form-field">
             <label>目前 PIN 碼</label>
             <input type="password" id="old-pin" inputmode="numeric" maxlength="6"
-              style="text-align:center;font-size:20px;letter-spacing:6px;">
+              class="pin-input">
           </div>
           <div class="form-field">
             <label>新 PIN 碼（留空則移除）</label>
             <input type="password" id="new-pin" inputmode="numeric" maxlength="6"
-              style="text-align:center;font-size:20px;letter-spacing:6px;">
+              class="pin-input">
           </div>
         </div>
       ` : `
@@ -1680,7 +1680,7 @@ const Pages = (() => {
           <div class="form-field">
             <label>設定 PIN 碼（4~6 碼數字）</label>
             <input type="password" id="new-pin" inputmode="numeric" maxlength="6"
-              style="text-align:center;font-size:20px;letter-spacing:6px;" autofocus>
+              class="pin-input" autofocus>
           </div>
         </div>
       `}
