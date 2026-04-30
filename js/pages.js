@@ -86,18 +86,18 @@ const Pages = (() => {
     const todayStr = Utils.todayStr();
 
     const personalTxs = allTxs.filter(tx => tx.walletType === 'personal' && tx.userId === me);
-    const personalBalance = personalTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+    const personalExpense = personalTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
     const personalToday = personalTxs.filter(tx => tx.date === todayStr)
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     const sharedTxs = allTxs.filter(tx => tx.walletType === 'shared');
-    const sharedBalance = sharedTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+    const sharedExpense = sharedTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
     const sharedRecent = sharedTxs
       .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
       .slice(0, 5);
 
     const houseFundTxs = allTxs.filter(tx => tx.walletType === 'house_fund');
-    const houseFundBalance = houseFundTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+    const myHouseFundExpense = houseFundTxs.filter(tx => tx.type === 'income' && tx.userId === me).reduce((s, tx) => s + tx.amount, 0);
 
     const renderTxList = (txs, emptyMsg) => {
       if (txs.length === 0) return `<div class="dash-empty">${emptyMsg}</div>`;
@@ -132,19 +132,19 @@ const Pages = (() => {
       </button>
 
       <div class="card">
-        <div class="card-title">我的總資產</div>
+        <div class="card-title">我的支出</div>
         <div class="asset-grid">
-          <div class="asset-block ${personalBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
+          <div class="asset-block expense-block" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
             <div class="asset-label">🔒 私人</div>
-            <div class="asset-value">${Utils.formatAmount(personalBalance)}</div>
+            <div class="asset-value">${Utils.formatAmount(personalExpense)}</div>
           </div>
-          <div class="asset-block ${houseFundBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')">
+          <div class="asset-block expense-block" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')">
             <div class="asset-label">🏠 買房基金</div>
-            <div class="asset-value">${Utils.formatAmount(houseFundBalance)}</div>
+            <div class="asset-value">${Utils.formatAmount(myHouseFundExpense)}</div>
           </div>
-          <div class="asset-block ${sharedBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
+          <div class="asset-block expense-block" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
             <div class="asset-label">💑 共同</div>
-            <div class="asset-value">${Utils.formatAmount(sharedBalance)}</div>
+            <div class="asset-value">${Utils.formatAmount(sharedExpense)}</div>
           </div>
         </div>
       </div>
@@ -228,7 +228,7 @@ const Pages = (() => {
         <button onclick="Pages.nextMonth()">›</button>
       </div>
 
-      <div class="balance-hero">
+      <div class="balance-hero ${balance < 0 ? 'balance-negative' : 'balance-positive'}">
         <div class="balance-label">${balanceLabel}</div>
         <div class="balance-amount">${Utils.formatAmount(balance)}</div>
       </div>
@@ -891,7 +891,7 @@ const Pages = (() => {
 
     return `
       <div class="card" style="text-align:center;padding:20px">
-        <div class="card-title">我的總資產</div>
+        <div class="card-title">帳戶餘額總計</div>
         <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalBalance)}</div>
       </div>
 
