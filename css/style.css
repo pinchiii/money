@@ -322,6 +322,83 @@ body {
   color: var(--expense-color);
 }
 
+/* ─── Dashboard Asset Grid ─── */
+.asset-grid {
+  display: flex;
+  gap: 8px;
+}
+
+.asset-block {
+  flex: 1;
+  text-align: center;
+  padding: 12px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.asset-block:active {
+  transform: scale(0.96);
+}
+
+.asset-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.asset-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+/* ─── Dashboard Tab Bar ─── */
+.dash-tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border-bottom: 1.5px solid var(--border);
+}
+
+.dash-tab {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+}
+
+.dash-tab.active {
+  color: var(--primary);
+}
+
+.dash-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1.5px;
+  left: 20%;
+  right: 20%;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+.dash-empty {
+  text-align: center;
+  padding: 28px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 /* ─── Upcoming Bills ─── */
 .bill-item {
   display: flex;

@@ -5,6 +5,7 @@ const Pages = (() => {
   let cardViewId = null;
   let txViewMode = 'list';   // 'list' | 'calendar' | 'chart'
   let calendarSelectedDate = null;
+  let dashboardTab = 'personal'; // 'personal' | 'shared'
 
   // ──────────── Login ────────────
   function renderLogin() {
@@ -82,12 +83,42 @@ const Pages = (() => {
     }).filter(b => b.unpaid > 0).sort((a, b) => a.payDate - b.payDate);
 
     const allTxs = Store.getVisibleTransactions();
-    const sharedRecent = allTxs
-      .filter(tx => tx.walletType === 'shared')
+    const todayStr = Utils.todayStr();
+
+    const personalTxs = allTxs.filter(tx => tx.walletType === 'personal' && tx.userId === me);
+    const personalBalance = personalTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+    const personalToday = personalTxs.filter(tx => tx.date === todayStr)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+    const sharedTxs = allTxs.filter(tx => tx.walletType === 'shared');
+    const sharedBalance = sharedTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+    const sharedRecent = sharedTxs
       .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
       .slice(0, 5);
+
     const houseFundTxs = allTxs.filter(tx => tx.walletType === 'house_fund');
     const houseFundBalance = houseFundTxs.reduce((s, tx) => s + (tx.type === 'income' ? tx.amount : -tx.amount), 0);
+
+    const renderTxList = (txs, emptyMsg) => {
+      if (txs.length === 0) return `<div class="dash-empty">${emptyMsg}</div>`;
+      return txs.map(tx => {
+        const cat = Utils.getCategoryInfo(tx.category, tx.type);
+        const user = Utils.getUserInfo(tx.userId);
+        const sign = tx.type === 'income' ? '+' : '-';
+        const typeLabel = tx.type === 'income' ? '收入' : '支出';
+        return `
+          <div class="tx-item" onclick="Pages.showTxDetail('${tx.id}')">
+            <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+            <div class="tx-details">
+              <div class="tx-desc">${tx.description || cat.name}</div>
+              <div class="tx-meta">
+                <span class="tx-meta-text">${user.emoji} ${user.name}・${typeLabel}・${Utils.formatDate(tx.date)}</span>
+              </div>
+            </div>
+            <div class="tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
+          </div>`;
+      }).join('');
+    };
 
     return `
       <div class="user-greeting">
@@ -100,10 +131,22 @@ const Pages = (() => {
         <span>快速記帳</span>
       </button>
 
-      <div class="card" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')" style="cursor:pointer">
-        <div class="card-title">🏠 買房基金</div>
-        <div style="font-size:24px;font-weight:800;color:var(--primary);padding:4px 0">${Utils.formatAmount(houseFundBalance)}</div>
-        <div style="font-size:12px;color:var(--text-muted)">點擊查看明細</div>
+      <div class="card">
+        <div class="card-title">我的總資產</div>
+        <div class="asset-grid">
+          <div class="asset-block" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
+            <div class="asset-label">🔒 私人</div>
+            <div class="asset-value">${Utils.formatAmount(personalBalance)}</div>
+          </div>
+          <div class="asset-block" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')">
+            <div class="asset-label">🏠 買房基金</div>
+            <div class="asset-value">${Utils.formatAmount(houseFundBalance)}</div>
+          </div>
+          <div class="asset-block" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
+            <div class="asset-label">💑 共同</div>
+            <div class="asset-value">${Utils.formatAmount(sharedBalance)}</div>
+          </div>
+        </div>
       </div>
 
       ${upcomingBills.length > 0 ? `
@@ -123,29 +166,21 @@ const Pages = (() => {
       ` : ''}
 
       <div class="card">
-        <div class="card-title">明細</div>
-        ${sharedRecent.length > 0
-          ? sharedRecent.map(tx => {
-              const cat = Utils.getCategoryInfo(tx.category, tx.type);
-              const user = Utils.getUserInfo(tx.userId);
-              const sign = tx.type === 'income' ? '+' : '-';
-              const typeLabel = tx.type === 'income' ? '收入' : '支出';
-              return `
-                <div class="tx-item" onclick="Pages.showTxDetail('${tx.id}')">
-                  <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
-                  <div class="tx-details">
-                    <div class="tx-desc">${tx.description || cat.name}</div>
-                    <div class="tx-meta">
-                      <span class="tx-meta-text">${user.emoji} ${user.name}・${typeLabel}・${Utils.formatDate(tx.date)}</span>
-                    </div>
-                  </div>
-                  <div class="tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
-                </div>`;
-            }).join('')
-          : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">還沒有共同支出紀錄</div>'
+        <div class="dash-tab-bar">
+          <button class="dash-tab ${dashboardTab === 'personal' ? 'active' : ''}" onclick="Pages.setDashboardTab('personal')">🔒 私人帳本</button>
+          <button class="dash-tab ${dashboardTab === 'shared' ? 'active' : ''}" onclick="Pages.setDashboardTab('shared')">💑 共同帳本</button>
+        </div>
+        ${dashboardTab === 'personal'
+          ? renderTxList(personalToday, '要記得記帳唷！')
+          : renderTxList(sharedRecent, '還沒有共同支出紀錄')
         }
       </div>
     `;
+  }
+
+  function setDashboardTab(tab) {
+    dashboardTab = tab;
+    App.refresh();
   }
 
   // ──────────── Transactions ────────────
@@ -2015,6 +2050,7 @@ const Pages = (() => {
     addTxType = 'expense';
     txViewMode = 'list';
     calendarSelectedDate = null;
+    dashboardTab = 'personal';
   }
 
   return {
@@ -2068,6 +2104,7 @@ const Pages = (() => {
     prevMonth,
     nextMonth,
     setWalletFilter,
+    setDashboardTab,
     setViewMode,
     selectCalendarDate,
     resetFilters,
