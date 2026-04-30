@@ -589,6 +589,7 @@ const Pages = (() => {
     const meInfo = Utils.getUserInfo(me);
     const settings = Store.getSettings();
     const allCards = Store.getCreditCards();
+    const myAccounts = Store.getMyAccounts();
     const isEdit = !!editTx;
     const type = editTx?.type || addTxType;
     const categories = type === 'income' ? Store.INCOME_CATEGORIES : Store.EXPENSE_CATEGORIES;
@@ -658,6 +659,19 @@ const Pages = (() => {
           </div>
         ` : ''}
 
+        ${type === 'income' ? `
+          <div class="form-field" id="account-field" style="${isPersonal ? '' : 'display:none'}">
+            <label>收入入帳</label>
+            <select id="tx-account">
+              <option value="">💵 現金</option>
+              ${myAccounts.map(a => `
+                <option value="${a.id}" ${editTx?.accountId === a.id ? 'selected' : ''}>${a.icon} ${a.name}</option>
+              `).join('')}
+            </select>
+            <div class="field-hint">選擇帳戶後，該帳戶餘額會自動增加</div>
+          </div>
+        ` : ''}
+
         <div class="form-field">
           <label>分類</label>
           <div class="category-grid" id="category-grid">
@@ -699,6 +713,7 @@ const Pages = (() => {
     document.getElementById('tx-wallet').value = wallet;
     const payerField = document.getElementById('payer-field');
     const cardField = document.getElementById('card-field');
+    const accountField = document.getElementById('account-field');
     const btns = document.querySelectorAll('.wallet-toggle-btn');
     btns.forEach(b => b.classList.remove('active-shared', 'active-personal'));
 
@@ -706,14 +721,17 @@ const Pages = (() => {
       btns[2].classList.add('active-personal');
       payerField.style.display = 'none';
       if (cardField) cardField.style.display = '';
+      if (accountField) accountField.style.display = '';
       updateCardOptions(Store.getCurrentUser());
     } else if (wallet === 'house_fund') {
       btns[1].classList.add('active-shared');
       payerField.style.display = '';
       if (cardField) cardField.style.display = 'none';
+      if (accountField) accountField.style.display = 'none';
     } else {
       btns[0].classList.add('active-shared');
       payerField.style.display = '';
+      if (accountField) accountField.style.display = 'none';
       const selectedUser = document.getElementById('tx-user').value;
       updateCardOptions(selectedUser);
     }
@@ -1487,6 +1505,7 @@ const Pages = (() => {
 
     const me = Store.getCurrentUser();
     const walletType = document.getElementById('tx-wallet').value;
+    const accountId = document.getElementById('tx-account')?.value || '';
 
     const tx = {
       amount,
@@ -1498,6 +1517,7 @@ const Pages = (() => {
       userId: walletType === 'personal' ? me : (document.getElementById('tx-user').value === 'shared_wallet' ? 'shared_wallet' : document.getElementById('tx-user').value),
       walletType,
       creditCardId: type === 'expense' && document.getElementById('tx-user')?.value !== 'shared_wallet' ? (document.getElementById('tx-card')?.value || '') : '',
+      accountId: type === 'income' && walletType === 'personal' ? accountId : '',
     };
 
     if (editId) {
@@ -1505,7 +1525,12 @@ const Pages = (() => {
       Utils.showToast('已更新紀錄');
     } else {
       Store.addTransaction(tx);
-      if (tx.walletType === 'shared' && tx.creditCardId) {
+
+      if (type === 'income' && walletType === 'personal' && accountId) {
+        Store.adjustAccountBalance(accountId, amount);
+        const account = Store.getAccounts().find(a => a.id === accountId);
+        Utils.showToast(`已記錄！${account ? account.name : '帳戶'}餘額已更新`);
+      } else if (tx.walletType === 'shared' && tx.creditCardId) {
         const card = Store.getCreditCards().find(c => c.id === tx.creditCardId);
         if (card) {
           Utils.showToast(`已記錄！同時計入 ${card.name} 帳單`);
