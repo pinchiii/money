@@ -352,7 +352,22 @@ body {
 .asset-value {
   font-size: 14px;
   font-weight: 800;
-  color: var(--primary);
+}
+
+.asset-block.positive {
+  background: rgba(122, 158, 126, 0.1);
+}
+
+.asset-block.positive .asset-value {
+  color: var(--income-color);
+}
+
+.asset-block.negative {
+  background: rgba(201, 123, 107, 0.1);
+}
+
+.asset-block.negative .asset-value {
+  color: var(--expense-color);
 }
 
 /* ─── Dashboard Tab Bar ─── */

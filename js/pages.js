@@ -134,15 +134,15 @@ const Pages = (() => {
       <div class="card">
         <div class="card-title">我的總資產</div>
         <div class="asset-grid">
-          <div class="asset-block" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
+          <div class="asset-block ${personalBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
             <div class="asset-label">🔒 私人</div>
             <div class="asset-value">${Utils.formatAmount(personalBalance)}</div>
           </div>
-          <div class="asset-block" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')">
+          <div class="asset-block ${houseFundBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('house_fund');App.navigate('transactions')">
             <div class="asset-label">🏠 買房基金</div>
             <div class="asset-value">${Utils.formatAmount(houseFundBalance)}</div>
           </div>
-          <div class="asset-block" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
+          <div class="asset-block ${sharedBalance < 0 ? 'negative' : 'positive'}" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
             <div class="asset-label">💑 共同</div>
             <div class="asset-value">${Utils.formatAmount(sharedBalance)}</div>
           </div>
