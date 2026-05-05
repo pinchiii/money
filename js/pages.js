@@ -1682,14 +1682,41 @@ const Pages = (() => {
     const account = Store.getAccounts().find(a => a.id === accountId);
     if (!account) return;
 
+    const noteEl = document.getElementById('adjust-note');
+    const note = noteEl ? noteEl.value.trim() : '';
+
     if (mode === 'set') {
       Store.updateAccount(accountId, { balance: val });
       Utils.showToast('餘額已更新');
     } else if (mode === 'income') {
       Store.adjustAccountBalance(accountId, val);
+      Store.addTransaction({
+        amount: val,
+        type: 'income',
+        category: 'account_adjust',
+        description: note || `${account.name} 手動入帳`,
+        note: '',
+        date: Utils.todayStr(),
+        userId: Store.getCurrentUser(),
+        walletType: 'personal',
+        creditCardId: '',
+        accountId: accountId,
+      });
       Utils.showToast(`已入帳 ${Utils.formatAmount(val)}`);
     } else {
       Store.adjustAccountBalance(accountId, -val);
+      Store.addTransaction({
+        amount: val,
+        type: 'expense',
+        category: 'account_adjust',
+        description: note || `${account.name} 手動扣款`,
+        note: '',
+        date: Utils.todayStr(),
+        userId: Store.getCurrentUser(),
+        walletType: 'personal',
+        creditCardId: '',
+        accountId: accountId,
+      });
       Utils.showToast(`已扣款 ${Utils.formatAmount(val)}`);
     }
 

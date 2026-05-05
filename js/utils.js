@@ -34,6 +34,8 @@ const Utils = (() => {
   }
 
   function getCategoryInfo(categoryId, type) {
+    if (categoryId === 'account_adjust') return { icon: '🏦', name: '帳戶調整' };
+    if (categoryId === 'bill') return { icon: '💳', name: '信用卡扣款' };
     const cats = type === 'income' ? Store.INCOME_CATEGORIES : Store.EXPENSE_CATEGORIES;
     return cats.find(c => c.id === categoryId) || { icon: '📌', name: '其他' };
   }
