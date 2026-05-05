@@ -65,6 +65,7 @@ const Store = (() => {
       userId: row.user_id,
       walletType: row.wallet_type,
       creditCardId: row.credit_card_id || '',
+      accountId: row.account_id || '',
       isAutoBill: row.is_auto_bill || false,
       createdAt: row.created_at,
     };
@@ -82,6 +83,7 @@ const Store = (() => {
       user_id: tx.userId,
       wallet_type: tx.walletType,
       credit_card_id: tx.creditCardId || '',
+      account_id: tx.accountId || '',
       is_auto_bill: tx.isAutoBill || false,
       created_at: tx.createdAt,
     };
