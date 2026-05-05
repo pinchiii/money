@@ -1144,10 +1144,21 @@ const Pages = (() => {
     statusEl.className = 'stock-symbol-status loading';
 
     if (market === 'tse' || market === 'otc') {
-      const result = await fetchTWStockPrice(symbol, market);
-      if (result && result.name) {
-        nameInput.value = result.name;
-        statusEl.textContent = `✓ ${result.name}`;
+      let result = await fetchTWStockPriceBatch([{ symbol, market }]);
+      if (!result[symbol]) {
+        const alt = market === 'otc' ? 'tse' : 'otc';
+        result = await fetchTWStockPriceBatch([{ symbol, market: alt }]);
+        if (result[symbol]) {
+          document.getElementById('stock-market').value = alt;
+          const btns = document.querySelectorAll('.market-toggle-btn');
+          btns.forEach(b => b.classList.remove('active'));
+          btns.forEach(b => { if (b.textContent.includes(alt === 'tse' ? '上市' : '上櫃')) b.classList.add('active'); });
+        }
+      }
+      const r = result[symbol];
+      if (r && r.name) {
+        nameInput.value = r.name;
+        statusEl.textContent = `✓ ${r.name}`;
         statusEl.className = 'stock-symbol-status found';
       } else {
         statusEl.textContent = '找不到此代號';
@@ -1358,11 +1369,17 @@ const Pages = (() => {
     App.navigate('wallet');
   }
 
+  function fetchWithTimeout(url, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  }
+
   async function fetchUSStockPrice(symbol) {
     const apiKey = Store.getFinnhubKey();
     if (!apiKey) return null;
     try {
-      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+      const res = await fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
       const data = await res.json();
       return (data.c && data.c > 0) ? data.c : null;
     } catch (e) {
@@ -1371,9 +1388,25 @@ const Pages = (() => {
     }
   }
 
-  async function fetchTWStockPrice(symbol, exchange) {
-    const ex = exchange === 'otc' ? 'otc' : 'tse';
-    const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${ex}_${symbol}.tw`;
+  function parseTWStockRow(row) {
+    const price = parseFloat(row.z);
+    if (!isNaN(price) && price > 0) return { price, name: row.n, symbol: row.c };
+    const y = parseFloat(row.y);
+    if (!isNaN(y) && y > 0) return { price: y, name: row.n, symbol: row.c };
+    const o = parseFloat(row.o);
+    if (!isNaN(o) && o > 0) return { price: o, name: row.n, symbol: row.c };
+    return null;
+  }
+
+  async function fetchTWStockPriceBatch(stockList) {
+    if (stockList.length === 0) return {};
+
+    const queryParts = stockList.map(s => {
+      const ex = s.market === 'otc' ? 'otc' : 'tse';
+      return `${ex}_${s.symbol}.tw`;
+    });
+    const twseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${queryParts.join('|')}`;
+
     const proxies = [
       (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
       (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
@@ -1381,17 +1414,35 @@ const Pages = (() => {
 
     for (const makeUrl of proxies) {
       try {
-        const res = await fetch(makeUrl(twseUrl));
-        const data = await res.json();
+        const res = await fetchWithTimeout(makeUrl(twseUrl), 10000);
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { continue; }
+
         if (data.msgArray && data.msgArray.length > 0) {
-          const price = parseFloat(data.msgArray[0].z);
-          if (!isNaN(price) && price > 0) return { price, name: data.msgArray[0].n };
-          const yesterdayPrice = parseFloat(data.msgArray[0].y);
-          if (!isNaN(yesterdayPrice) && yesterdayPrice > 0) return { price: yesterdayPrice, name: data.msgArray[0].n };
+          const results = {};
+          for (const row of data.msgArray) {
+            const parsed = parseTWStockRow(row);
+            if (parsed) results[row.c] = parsed;
+          }
+          if (Object.keys(results).length > 0) return results;
         }
       } catch (e) {
-        console.warn('TW stock proxy failed, trying next:', e);
+        console.warn('TW batch proxy failed, trying next:', e.message);
       }
+    }
+    return {};
+  }
+
+  async function fetchTWStockPrice(symbol, exchange) {
+    const result = await fetchTWStockPriceBatch([{ symbol, market: exchange }]);
+    if (result[symbol]) return result[symbol];
+
+    const altExchange = exchange === 'otc' ? 'tse' : 'otc';
+    const altResult = await fetchTWStockPriceBatch([{ symbol, market: altExchange }]);
+    if (altResult[symbol]) {
+      console.info(`${symbol}: found on ${altExchange} instead of ${exchange}`);
+      return altResult[symbol];
     }
     return null;
   }
@@ -1432,18 +1483,61 @@ const Pages = (() => {
     if (stocks.length === 0) return;
 
     const usStocks = stocks.filter(s => (s.market || 'us') === 'us');
+    const twStocks = stocks.filter(s => s.market === 'tse' || s.market === 'otc');
+
     if (usStocks.length > 0 && !Store.getFinnhubKey()) {
       Utils.showToast('美股需要 Finnhub API Key，台股可直接更新');
     }
 
     Utils.showToast('正在更新報價...');
-
     let updated = 0;
-    for (const stock of stocks) {
-      const price = await fetchSingleStockPrice(stock);
-      if (price) updated++;
-      await new Promise(r => setTimeout(r, 300));
-    }
+
+    const twPromise = (async () => {
+      if (twStocks.length === 0) return;
+
+      let results = await fetchTWStockPriceBatch(twStocks);
+
+      const missing = twStocks.filter(s => !results[s.symbol]);
+      if (missing.length > 0) {
+        const retryList = missing.map(s => ({
+          symbol: s.symbol,
+          market: s.market === 'otc' ? 'tse' : 'otc',
+        }));
+        const retryResults = await fetchTWStockPriceBatch(retryList);
+        Object.assign(results, retryResults);
+      }
+
+      for (const stock of twStocks) {
+        const r = results[stock.symbol];
+        if (r) {
+          Store.updateStock(stock.id, {
+            currentPrice: r.price,
+            lastUpdated: new Date().toISOString(),
+          });
+          if (r.name && !stock.name) {
+            Store.updateStock(stock.id, { name: r.name });
+          }
+          updated++;
+        }
+      }
+    })();
+
+    const usPromise = (async () => {
+      if (usStocks.length === 0 || !Store.getFinnhubKey()) return;
+      for (const stock of usStocks) {
+        const price = await fetchUSStockPrice(stock.symbol);
+        if (price) {
+          Store.updateStock(stock.id, {
+            currentPrice: price,
+            lastUpdated: new Date().toISOString(),
+          });
+          updated++;
+        }
+        if (usStocks.length > 1) await new Promise(r => setTimeout(r, 200));
+      }
+    })();
+
+    await Promise.all([twPromise, usPromise]);
 
     Utils.showToast(`已更新 ${updated} 支股票報價`);
     App.navigate('wallet');
