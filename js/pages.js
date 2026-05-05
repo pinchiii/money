@@ -977,7 +977,7 @@ const Pages = (() => {
       <div class="wallet-section-title">帳戶</div>
 
       ${myAccounts.map(account => `
-        <div class="account-card" onclick="Pages.showEditAccount('${account.id}')">
+        <div class="account-card" onclick="Pages.showAccountDetail('${account.id}')">
           <div class="account-card-top">
             <div class="account-card-icon">${account.icon}</div>
             <div class="account-card-info">
@@ -1603,6 +1603,63 @@ const Pages = (() => {
     const account = Store.getAccounts().find(a => a.id === accountId);
     if (!account) return;
     showAddAccount(account);
+  }
+
+  function showAccountDetail(accountId) {
+    const account = Store.getAccounts().find(a => a.id === accountId);
+    if (!account) return;
+
+    const allTxs = Store.getTransactions();
+    const accountTxs = allTxs
+      .filter(tx => tx.accountId === accountId)
+      .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 20);
+
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${account.icon} ${account.name}</div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text-secondary)">目前餘額</div>
+        <div style="font-size:24px;font-weight:800;color:${(account.balance || 0) >= 0 ? 'var(--income-color)' : 'var(--expense-color)'}">${Utils.formatAmount(account.balance || 0)}</div>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:16px">
+        <button class="account-action-btn" onclick="Pages.hideModal();Pages.showAdjustBalance('${accountId}','income')">+ 入帳</button>
+        <button class="account-action-btn" onclick="Pages.hideModal();Pages.showAdjustBalance('${accountId}','expense')">- 扣款</button>
+        <button class="account-action-btn" onclick="Pages.hideModal();Pages.showAdjustBalance('${accountId}','set')">✏️ 設定</button>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text-primary)">最近帳戶紀錄</div>
+
+      ${accountTxs.length > 0 ? `
+        <div class="account-tx-list">
+          ${accountTxs.map(tx => {
+            const cat = Utils.getCategoryInfo(tx.category, tx.type);
+            const sign = tx.type === 'income' ? '+' : '-';
+            return `
+              <div class="account-tx-row" onclick="Pages.hideModal();Pages.showTxDetail('${tx.id}')">
+                <div class="account-tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+                <div class="account-tx-info">
+                  <div class="account-tx-desc">${tx.description || cat.name}</div>
+                  <div class="account-tx-date">${Utils.formatDate(tx.date)}</div>
+                </div>
+                <div class="account-tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      ` : `
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">
+          尚無帳戶紀錄
+        </div>
+      `}
+
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="Pages.hideModal();Pages.showEditAccount('${accountId}')">✏️ 編輯帳戶</button>
+      </div>
+    `);
   }
 
   function saveAccount(editId) {
@@ -2770,6 +2827,7 @@ const Pages = (() => {
     renderAccounts,
     showAddAccount: () => showAddAccount(),
     showEditAccount,
+    showAccountDetail,
     saveAccount,
     deleteAccount,
     showAdjustBalance,
