@@ -1648,18 +1648,18 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${account.icon} ${account.name} — ${titles[mode]}</div>
+        <div class="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${account.icon} ${account.name} — ${titles[mode]}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
-      <div style="text-align:center;margin-bottom:16px">
-        <div style="font-size:13px;color:var(--text-secondary)">目前餘額</div>
-        <div style="font-size:22px;font-weight:800">${Utils.formatAmount(account.balance || 0)}</div>
+      <div style="text-align:center;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-secondary)">目前餘額</div>
+        <div style="font-size:20px;font-weight:800">${Utils.formatAmount(account.balance || 0)}</div>
       </div>
       <div class="form-grid">
         <div class="form-field">
           <label>${placeholders[mode]}</label>
           <input type="number" id="adjust-amount" placeholder="0" inputmode="decimal" autofocus
-            style="font-size:24px;text-align:center;font-weight:700">
+            style="font-size:20px;text-align:center;font-weight:700;max-width:100%;box-sizing:border-box">
         </div>
         ${mode !== 'set' ? `
           <div class="form-field">
