@@ -9,7 +9,7 @@ const App = (() => {
     dashboard: '首頁',
     transactions: '明細',
     add: '記帳',
-    wallet: '個人資產',
+    wallet: '資產',
     creditCards: '信用卡',
     cardStatement: '我的卡片',
     settings: '設定',

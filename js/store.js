@@ -19,6 +19,12 @@ const Store = (() => {
       { id: 'user2', name: '崇軒', emoji: '👦', pin: '' },
     ],
     currency: 'NT$',
+    houseFund: { cashDeposit: 0, stockCash: 0 },
+  };
+
+  const HOUSE_FUND_DEPOSIT_LABELS = {
+    cashDeposit: '資產存款',
+    stockCash: '股市存款',
   };
 
   const DEFAULT_EXPENSE_CATEGORIES = [
@@ -122,6 +128,7 @@ const Store = (() => {
       icon: row.icon || '🏦',
       balance: Number(row.balance || 0),
       ownerId: row.owner_id,
+      assetScope: row.asset_scope || 'personal',
     };
   }
 
@@ -132,6 +139,7 @@ const Store = (() => {
       icon: acc.icon || '🏦',
       balance: acc.balance || 0,
       owner_id: acc.ownerId,
+      asset_scope: acc.assetScope || 'personal',
     };
   }
 
@@ -150,6 +158,7 @@ const Store = (() => {
       currentPrice: Number(row.current_price || 0),
       lastUpdated: row.last_updated || null,
       ownerId: row.owner_id,
+      assetScope: row.asset_scope || 'personal',
     };
   }
 
@@ -164,6 +173,7 @@ const Store = (() => {
       current_price: stock.currentPrice || 0,
       last_updated: stock.lastUpdated || null,
       owner_id: stock.ownerId,
+      asset_scope: stock.assetScope || 'personal',
     };
   }
 
@@ -318,17 +328,58 @@ const Store = (() => {
       db.from('settings').upsert({ id: 'global', data: s, updated_at: new Date().toISOString() }).then();
     },
 
+    // ── 買房基金存款（存在 settings，兩人共用）──
+    getHouseFundBalances() {
+      const s = this.getSettings();
+      if (!s.houseFund) {
+        const legacy = this.getHouseFundAccounts().reduce((sum, a) => sum + (a.balance || 0), 0);
+        s.houseFund = { cashDeposit: legacy, stockCash: 0 };
+        this.saveSettings(s);
+      }
+      return {
+        cashDeposit: Number(s.houseFund.cashDeposit || 0),
+        stockCash: Number(s.houseFund.stockCash || 0),
+      };
+    },
+    saveHouseFundBalances(balances) {
+      const s = this.getSettings();
+      s.houseFund = {
+        cashDeposit: Number(balances.cashDeposit ?? s.houseFund?.cashDeposit ?? 0),
+        stockCash: Number(balances.stockCash ?? s.houseFund?.stockCash ?? 0),
+      };
+      this.saveSettings(s);
+      return s.houseFund;
+    },
+    adjustHouseFundBalance(field, delta) {
+      const b = this.getHouseFundBalances();
+      b[field] = (b[field] || 0) + delta;
+      this.saveHouseFundBalances(b);
+      return b[field];
+    },
+
     // ── Accounts ──
     getAccounts() {
       return loadCache(CACHE.accounts) || [];
     },
     getMyAccounts() {
       const me = this.getCurrentUser();
-      return this.getAccounts().filter(a => a.ownerId === me);
+      return this.getAccounts().filter(a =>
+        (a.assetScope || 'personal') === 'personal' && a.ownerId === me
+      );
+    },
+    getHouseFundAccounts() {
+      return this.getAccounts().filter(a => (a.assetScope || 'personal') === 'house_fund');
     },
     addAccount(account) {
       const list = this.getAccounts();
       account.id = uid();
+      const scope = account.assetScope || 'personal';
+      account.assetScope = scope;
+      if (scope === 'house_fund') {
+        account.ownerId = 'house_fund';
+      } else if (!account.ownerId) {
+        account.ownerId = this.getCurrentUser();
+      }
       list.push(account);
       saveCache(CACHE.accounts, list);
       db.from('accounts').insert(appAccToDb(account)).then();
@@ -594,9 +645,16 @@ const Store = (() => {
     },
 
     // ── Stocks ──
-    getStocks() {
+    getStocks(scope) {
+      const target = scope || 'personal';
+      const all = loadCache(CACHE.stocks) || [];
+      if (target === 'house_fund') {
+        return all.filter(s => (s.assetScope || 'personal') === 'house_fund');
+      }
       const me = this.getCurrentUser();
-      return (loadCache(CACHE.stocks) || []).filter(s => s.ownerId === me);
+      return all.filter(s =>
+        (s.assetScope || 'personal') === 'personal' && s.ownerId === me
+      );
     },
     getAllStocks() {
       return loadCache(CACHE.stocks) || [];
@@ -604,7 +662,9 @@ const Store = (() => {
     addStock(stock) {
       const list = this.getAllStocks();
       stock.id = uid();
-      stock.ownerId = this.getCurrentUser();
+      const scope = stock.assetScope || 'personal';
+      stock.assetScope = scope;
+      stock.ownerId = scope === 'house_fund' ? 'house_fund' : this.getCurrentUser();
       stock.currentPrice = stock.avgCost || 0;
       stock.lastUpdated = null;
       list.push(stock);
@@ -668,11 +728,11 @@ const Store = (() => {
       this.saveSettings(settings);
     },
 
-    getStockTotalValue() {
-      return this.getStocks().reduce((sum, s) => sum + (s.currentPrice || 0) * s.shares, 0);
+    getStockTotalValue(scope) {
+      return this.getStocks(scope).reduce((sum, s) => sum + (s.currentPrice || 0) * s.shares, 0);
     },
-    getStockTotalCost() {
-      return this.getStocks().reduce((sum, s) => sum + s.avgCost * s.shares, 0);
+    getStockTotalCost(scope) {
+      return this.getStocks(scope).reduce((sum, s) => sum + s.avgCost * s.shares, 0);
     },
 
     exportData() {

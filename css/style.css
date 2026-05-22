@@ -1816,6 +1816,150 @@ body {
 
 /* ── Chart View ── */
 /* ── Wallet Section ── */
+.house-fund-asset-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(108,92,231,0.12), rgba(162,155,254,0.1));
+  border: 1.5px solid var(--primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.house-fund-asset-banner-arrow {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.house-fund-asset-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
+.asset-empty-card {
+  text-align: center;
+  padding: 24px 16px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: var(--card);
+  border: 1.5px dashed var(--border);
+  box-shadow: var(--shadow);
+}
+
+.asset-empty-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.asset-empty-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.asset-empty-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.asset-empty-btn {
+  width: 100%;
+  max-width: 280px;
+}
+
+.asset-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.asset-quick-actions-house .asset-quick-btn {
+  flex: 1 1 calc(33% - 6px);
+  min-width: calc(33% - 6px);
+}
+
+.deposit-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.deposit-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  border: 1.5px solid var(--border);
+}
+
+.deposit-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.deposit-card-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.deposit-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.deposit-card-amount {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.deposit-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.asset-quick-btn {
+  flex: 1;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.asset-quick-btn.income {
+  border-color: var(--income-color);
+  color: var(--income-color);
+}
+
+.asset-quick-btn.expense {
+  border-color: var(--expense-color);
+  color: var(--expense-color);
+}
+
+.asset-quick-btn:active {
+  transform: scale(0.97);
+}
+
 .wallet-section-title {
   font-size: 15px;
   font-weight: 700;

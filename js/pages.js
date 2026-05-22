@@ -2,6 +2,8 @@ const Pages = (() => {
   let currentMonth = new Date().getMonth();
   let currentYear = new Date().getFullYear();
   let walletFilter = 'shared'; // 'shared' | 'house_fund' | 'personal'
+  const ASSET_VIEW_KEY = 'pinchi_asset_view';
+  let assetView = localStorage.getItem(ASSET_VIEW_KEY) || 'personal'; // 'personal' | 'house_fund'
   let cardViewId = null;
   let txViewMode = 'list';   // 'list' | 'calendar' | 'chart'
   let calendarSelectedDate = null;
@@ -291,6 +293,14 @@ const Pages = (() => {
           <span class="ledger-tab-name">${meInfo.name}的私帳</span>
         </button>
       </div>
+
+      ${walletFilter === 'house_fund' ? `
+        <div class="house-fund-asset-banner" onclick="Pages.openHouseFundAssets()">
+          <span>🏦 存款與股票請到資產頁管理</span>
+          <span class="house-fund-asset-banner-arrow">前往資產 →</span>
+        </div>
+        <p class="house-fund-asset-hint">此頁為收支明細；修改存款、持股請點底部「資產」→「買房基金」</p>
+      ` : ''}
 
       <div class="view-mode-bar">
         <button class="view-mode-btn ${txViewMode === 'list' ? 'active' : ''}" onclick="Pages.setViewMode('list')">📋 列表</button>
@@ -626,6 +636,7 @@ const Pages = (() => {
       : walletFilter === 'shared' ? 'shared'
       : 'personal';
     const isPersonal = defaultWallet === 'personal';
+    const showAccountField = type === 'income' && isPersonal;
     const defaultPayer = editTx?.userId || me;
     const payerCards = allCards.filter(c => c.ownerId === (isPersonal ? me : defaultPayer));
 
@@ -687,8 +698,8 @@ const Pages = (() => {
           </div>
         ` : ''}
 
-        ${type === 'income' ? `
-          <div class="form-field" id="account-field" style="${isPersonal ? '' : 'display:none'}">
+        ${showAccountField ? `
+          <div class="form-field" id="account-field">
             <label>收入入帳</label>
             <select id="tx-account">
               <option value="">💵 現金</option>
@@ -784,6 +795,24 @@ const Pages = (() => {
     const currentVal = cardSelect.value;
     cardSelect.innerHTML = '<option value="">💵 現金</option>' +
       userCards.map(c => `<option value="${c.id}" ${currentVal === c.id ? 'selected' : ''}>💳 ${c.name}</option>`).join('');
+  }
+
+  function updateAccountOptions(wallet) {
+    const accountSelect = document.getElementById('tx-account');
+    if (!accountSelect) return;
+    const isHouseFund = wallet === 'house_fund';
+    const accounts = isHouseFund ? Store.getHouseFundAccounts() : Store.getMyAccounts();
+    const currentVal = accountSelect.value;
+    const cashLabel = isHouseFund ? '不連動帳戶' : '現金';
+    accountSelect.innerHTML = `<option value="">${isHouseFund ? '💵' : '💵'} ${cashLabel}</option>` +
+      accounts.map(a => `<option value="${a.id}" ${currentVal === a.id ? 'selected' : ''}>${a.icon} ${a.name}</option>`).join('');
+    const label = accountSelect.closest('.form-field')?.querySelector('label');
+    if (label) {
+      const type = addTxType;
+      label.textContent = isHouseFund
+        ? (type === 'income' ? '存入買房基金帳戶' : '從買房基金帳戶扣款')
+        : '收入入帳';
+    }
   }
 
   // ──────────── Credit Cards (獨立頁面) ────────────
@@ -920,12 +949,39 @@ const Pages = (() => {
     App.navigate('creditCards');
   }
 
-  // ──────────── Wallet (個人資產：帳戶 + 股票庫存) ────────────
+  function getAccountsForAssetView() {
+    return assetView === 'house_fund' ? Store.getHouseFundAccounts() : Store.getMyAccounts();
+  }
+
+  function getStocksForAssetView() {
+    return Store.getStocks(assetView);
+  }
+
+  function setAssetView(view) {
+    assetView = view;
+    localStorage.setItem(ASSET_VIEW_KEY, view);
+    App.refresh();
+  }
+
+  function openHouseFundAssets() {
+    setAssetView('house_fund');
+    App.navigate('wallet');
+  }
+
+  function goAddHouseFund(type) {
+    addTxType = type;
+    walletFilter = 'house_fund';
+    App.navigate('add');
+  }
+
+  // ──────────── Wallet (個人 / 買房基金資產) ────────────
   function renderWallet() {
-    const me = Store.getCurrentUser();
-    const myAccounts = Store.getMyAccounts();
-    const totalBalance = myAccounts.reduce((s, a) => s + (a.balance || 0), 0);
-    const myStocks = Store.getStocks();
+    if (assetView === 'house_fund') return renderHouseFundWallet();
+    const viewAccounts = getAccountsForAssetView();
+    const totalBalance = viewAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    const myStocks = Store.getStocks('personal');
+    const stockTotalValue = myStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const totalAssets = totalBalance + stockTotalValue;
     const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
     const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
     const usTotalValue = usStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
@@ -969,14 +1025,28 @@ const Pages = (() => {
     };
 
     return `
+      ${renderAssetViewTabs('personal')}
+
       <div class="card" style="text-align:center;padding:20px">
-        <div class="card-title">帳戶餘額總計</div>
-        <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalBalance)}</div>
+        <div class="card-title">個人總資產</div>
+        <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalAssets)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">
+          現金 ${Utils.formatAmount(totalBalance)}${myStocks.length > 0 ? ` ・ 股票 ${Utils.formatAmount(stockTotalValue)}` : ''}
+        </div>
       </div>
 
       <div class="wallet-section-title">帳戶</div>
 
-      ${myAccounts.map(account => `
+      ${viewAccounts.length === 0 ? `
+        <div class="asset-empty-card">
+          <div class="asset-empty-icon">👤</div>
+          <div class="asset-empty-title">尚無個人帳戶</div>
+          <div class="asset-empty-desc">例如：薪轉戶、活存</div>
+          <button type="button" class="btn btn-primary asset-empty-btn" onclick="Pages.showAddAccount()">
+            + 新增帳戶
+          </button>
+        </div>
+      ` : viewAccounts.map(account => `
         <div class="account-card" onclick="Pages.showAccountDetail('${account.id}')">
           <div class="account-card-top">
             <div class="account-card-icon">${account.icon}</div>
@@ -995,9 +1065,10 @@ const Pages = (() => {
         </div>
       `).join('')}
 
-      <button class="add-card-btn" onclick="Pages.showAddAccount()">+ 新增帳戶</button>
+      ${viewAccounts.length > 0 ? `
+        <button class="add-card-btn" onclick="Pages.showAddAccount()">+ 新增帳戶</button>
+      ` : ''}
 
-      <!-- 股票庫存 - 收合面板 -->
       <div class="wallet-section-title" style="margin-top:20px">
         股票庫存
         ${myStocks.length > 0 ? `<button class="stock-refresh-btn" onclick="Pages.refreshAllStockPrices()">🔄 更新報價</button>` : ''}
@@ -1064,13 +1135,224 @@ const Pages = (() => {
           </div>
         ` : ''}
       ` : `
-        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">
-          還沒有股票庫存，點「+ 新增股票」開始吧
+        <div class="asset-empty-card">
+          <div class="asset-empty-icon">📈</div>
+          <div class="asset-empty-title">尚無股票庫存</div>
+          <div class="asset-empty-desc">新增後可記錄買進、賣出</div>
+          <button type="button" class="btn btn-primary asset-empty-btn" onclick="Pages.showAddStock()">
+            + 新增股票
+          </button>
         </div>
       `}
 
-      <button class="add-card-btn" onclick="Pages.showAddStock()">+ 新增股票</button>
+      ${myStocks.length > 0 ? `
+        <button class="add-card-btn" onclick="Pages.showAddStock()">+ 新增股票</button>
+      ` : ''}
     `;
+  }
+
+  function renderAssetViewTabs(active) {
+    return `
+      <div class="ledger-tabs" style="margin-bottom:12px">
+        <button class="ledger-tab ${active === 'personal' ? 'active' : ''}" onclick="Pages.setAssetView('personal')">
+          <span class="ledger-tab-icon">👤</span>
+          <span class="ledger-tab-name">個人資產</span>
+        </button>
+        <button class="ledger-tab ${active === 'house_fund' ? 'active' : ''}" onclick="Pages.setAssetView('house_fund')">
+          <span class="ledger-tab-icon">🏠</span>
+          <span class="ledger-tab-name">買房基金</span>
+        </button>
+      </div>
+    `;
+  }
+
+  function renderHouseFundDepositCard(field, icon, label, amount) {
+    return `
+      <div class="deposit-card">
+        <div class="deposit-card-top">
+          <div class="deposit-card-icon">${icon}</div>
+          <div class="deposit-card-info">
+            <div class="deposit-card-label">${label}</div>
+            <div class="deposit-card-amount">${Utils.formatAmount(amount)}</div>
+          </div>
+        </div>
+        <div class="deposit-card-actions">
+          <button type="button" class="account-action-btn" onclick="Pages.showEditHouseFundDeposit('${field}', 'income')">+ 增加</button>
+          <button type="button" class="account-action-btn" onclick="Pages.showEditHouseFundDeposit('${field}', 'expense')">- 減少</button>
+          <button type="button" class="account-action-btn" onclick="Pages.showEditHouseFundDeposit('${field}', 'set')">✏️ 設定餘額</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHouseFundWallet() {
+    const balances = Store.getHouseFundBalances();
+    const myStocks = Store.getStocks('house_fund');
+    const stockTotalValue = myStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const totalAssets = balances.cashDeposit + balances.stockCash + stockTotalValue;
+    const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
+    const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
+    const usTotalValue = usStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const usTotalCost = usStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+    const twTotalValue = twStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
+    const twTotalCost = twStocks.reduce((s, st) => s + st.avgCost * st.shares, 0);
+    const usPnl = usTotalValue - usTotalCost;
+    const twPnl = twTotalValue - twTotalCost;
+
+    const renderStockGroup = (stocks) => {
+      if (stocks.length === 0) return '';
+      return stocks.map(stock => {
+        const m = stock.market || 'us';
+        const mktVal = stock.currentPrice * stock.shares;
+        const cost = stock.avgCost * stock.shares;
+        const spnl = mktVal - cost;
+        const pnlPct = cost > 0 ? (spnl / cost * 100) : 0;
+        const fmt = (v) => Utils.formatStockPrice(v, m);
+        return `
+          <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
+            <div class="stock-card-top">
+              <div class="stock-card-info">
+                <div class="stock-card-symbol">${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+                <div class="stock-card-name">${stock.name || stock.symbol}</div>
+              </div>
+              <div class="stock-card-price">
+                <div class="stock-card-current">${fmt(stock.currentPrice)}</div>
+              </div>
+            </div>
+            <div class="stock-card-bottom">
+              <span>${stock.shares} 股 ・ 均價 ${fmt(stock.avgCost)}</span>
+              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${spnl >= 0 ? '+' : ''}${fmt(spnl)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    };
+
+    return `
+      ${renderAssetViewTabs('house_fund')}
+
+      <div class="asset-quick-actions asset-quick-actions-house">
+        <button type="button" class="asset-quick-btn income" onclick="Pages.goAddHouseFund('income')">+ 記收入</button>
+        <button type="button" class="asset-quick-btn expense" onclick="Pages.goAddHouseFund('expense')">- 記支出</button>
+        <button type="button" class="asset-quick-btn" onclick="Pages.showAddStock()">📈 新增／編輯股票</button>
+      </div>
+
+      <div class="card" style="text-align:center;padding:20px">
+        <div class="card-title">買房基金總資產</div>
+        <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalAssets)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">
+          存款 ${Utils.formatAmount(balances.cashDeposit + balances.stockCash)}
+          ${myStocks.length > 0 ? ` ・ 持股市值 ${Utils.formatAmount(stockTotalValue)}` : ''}
+        </div>
+      </div>
+
+      <div class="wallet-section-title">存款</div>
+      <div class="deposit-grid">
+        ${renderHouseFundDepositCard('cashDeposit', '🏦', '資產存款', balances.cashDeposit)}
+        ${renderHouseFundDepositCard('stockCash', '📈', '股市存款', balances.stockCash)}
+      </div>
+
+      <div class="wallet-section-title" style="margin-top:20px">
+        股票持股
+        ${myStocks.length > 0 ? `<button class="stock-refresh-btn" onclick="Pages.refreshAllStockPrices()">🔄 更新報價</button>` : ''}
+      </div>
+
+      ${myStocks.length > 0 ? `
+        ${usStocks.length > 0 ? `
+          <div class="collapsible-panel">
+            <div class="collapsible-header" onclick="Pages.togglePanel(this)">
+              <div class="collapsible-title">🇺🇸 美股 <span class="collapsible-count">${usStocks.length} 支</span></div>
+              <div class="collapsible-summary">
+                <span>市值 ${Utils.formatUSD(usTotalValue)}</span>
+                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatUSD(usPnl)}</span>
+              </div>
+              <div class="collapsible-arrow">▾</div>
+            </div>
+            <div class="collapsible-body collapsed">
+              ${renderStockGroup(usStocks)}
+            </div>
+          </div>
+        ` : ''}
+        ${twStocks.length > 0 ? `
+          <div class="collapsible-panel">
+            <div class="collapsible-header" onclick="Pages.togglePanel(this)">
+              <div class="collapsible-title">🇹🇼 台股 <span class="collapsible-count">${twStocks.length} 支</span></div>
+              <div class="collapsible-summary">
+                <span>市值 ${Utils.formatStockPrice(twTotalValue, 'tse')}</span>
+                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${twPnl >= 0 ? '+' : ''}${Utils.formatStockPrice(twPnl, 'tse')}</span>
+              </div>
+              <div class="collapsible-arrow">▾</div>
+            </div>
+            <div class="collapsible-body collapsed">
+              ${renderStockGroup(twStocks)}
+            </div>
+          </div>
+        ` : ''}
+        <button class="add-card-btn" onclick="Pages.showAddStock()">+ 新增股票</button>
+      ` : `
+        <div class="asset-empty-card">
+          <div class="asset-empty-icon">📈</div>
+          <div class="asset-empty-title">尚無持股</div>
+          <div class="asset-empty-desc">點股票可買進、賣出或編輯</div>
+          <button type="button" class="btn btn-primary asset-empty-btn" onclick="Pages.showAddStock()">+ 新增股票</button>
+        </div>
+      `}
+    `;
+  }
+
+  const HOUSE_FUND_DEPOSIT_NAMES = { cashDeposit: '資產存款', stockCash: '股市存款' };
+
+  function showEditHouseFundDeposit(field, mode) {
+    const balances = Store.getHouseFundBalances();
+    const label = HOUSE_FUND_DEPOSIT_NAMES[field] || field;
+    const current = balances[field] || 0;
+    const titles = { income: '增加存款', expense: '減少存款', set: '設定餘額' };
+    const placeholders = { income: '增加金額', expense: '減少金額', set: '新的餘額' };
+
+    showModal(`
+      <div class="modal-header">
+        <div class="modal-title">${label} — ${titles[mode]}</div>
+        <button class="modal-close" onclick="Pages.hideModal()">✕</button>
+      </div>
+      <div style="text-align:center;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-secondary)">目前餘額</div>
+        <div style="font-size:20px;font-weight:800">${Utils.formatAmount(current)}</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>${placeholders[mode]}</label>
+          <input type="number" id="hf-deposit-amount" placeholder="0" inputmode="decimal" autofocus
+            style="font-size:20px;text-align:center;font-weight:700">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="Pages.confirmHouseFundDeposit('${field}', '${mode}')">確認</button>
+      </div>
+    `);
+    setTimeout(() => document.getElementById('hf-deposit-amount')?.focus(), 300);
+  }
+
+  function confirmHouseFundDeposit(field, mode) {
+    const val = parseFloat(document.getElementById('hf-deposit-amount').value);
+    if (isNaN(val)) { Utils.showToast('請輸入金額'); return; }
+
+    const balances = Store.getHouseFundBalances();
+    const label = HOUSE_FUND_DEPOSIT_NAMES[field];
+
+    if (mode === 'set') {
+      balances[field] = val;
+      Store.saveHouseFundBalances(balances);
+      Utils.showToast(`${label}已更新`);
+    } else if (mode === 'income') {
+      Store.adjustHouseFundBalance(field, val);
+      Utils.showToast(`${label} +${Utils.formatAmount(val)}`);
+    } else {
+      Store.adjustHouseFundBalance(field, -val);
+      Utils.showToast(`${label} -${Utils.formatAmount(val)}`);
+    }
+
+    hideModal();
+    App.navigate('wallet');
   }
 
   function togglePanel(headerEl) {
@@ -1085,10 +1367,11 @@ const Pages = (() => {
 
   function showAddStock(editStock) {
     const isEdit = !!editStock;
+    const isHouseFund = assetView === 'house_fund';
     const market = editStock?.market || 'us';
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${isEdit ? '編輯股票' : '新增股票'}</div>
+        <div class="modal-title">${isEdit ? '編輯股票' : (isHouseFund ? '新增買房基金股票' : '新增股票')}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="form-grid">
@@ -1221,6 +1504,8 @@ const Pages = (() => {
       avgCost: parseFloat(document.getElementById('stock-cost').value) || 0,
     };
 
+    stock.assetScope = assetView;
+
     if (editId) {
       Store.updateStock(editId, stock);
       Utils.showToast('已更新');
@@ -1244,8 +1529,7 @@ const Pages = (() => {
   }
 
   function showStockDetail(stockId) {
-    const stocks = Store.getStocks();
-    const stock = stocks.find(s => s.id === stockId);
+    const stock = Store.getAllStocks().find(s => s.id === stockId);
     if (!stock) return;
 
     const txs = Store.getStockTransactions(stockId);
@@ -1303,14 +1587,14 @@ const Pages = (() => {
       ` : ''}
 
       <div class="modal-actions" style="margin-top:12px">
-        <button class="btn btn-ghost" onclick="Pages.showAddStock(Store.getStocks().find(s=>s.id==='${stockId}'))">✏️ 編輯</button>
+        <button class="btn btn-ghost" onclick="Pages.showAddStock(Store.getAllStocks().find(s=>s.id==='${stockId}'))">✏️ 編輯</button>
         <button class="btn btn-ghost" onclick="Pages.fetchAndRefresh('${stockId}')">🔄 更新報價</button>
       </div>
     `);
   }
 
   function showBuySellStock(stockId, type) {
-    const stock = Store.getStocks().find(s => s.id === stockId);
+    const stock = Store.getAllStocks().find(s => s.id === stockId);
     if (!stock) return;
     const m = stock.market || 'us';
     const currLabel = (m === 'tse' || m === 'otc') ? 'TWD' : 'USD';
@@ -1350,7 +1634,7 @@ const Pages = (() => {
     const price = parseFloat(document.getElementById('stx-price').value);
     if (!price || price <= 0) { Utils.showToast('請輸入成交價'); return; }
 
-    const stock = Store.getStocks().find(s => s.id === stockId);
+    const stock = Store.getAllStocks().find(s => s.id === stockId);
     if (type === 'sell' && stock && shares > stock.shares) {
       Utils.showToast('賣出股數不能超過持有股數'); return;
     }
@@ -1450,7 +1734,7 @@ const Pages = (() => {
   async function fetchSingleStockPrice(stockInfo) {
     const stock = stockInfo.id
       ? stockInfo
-      : Store.getStocks().find(s => s.symbol === stockInfo.symbol && s.market === stockInfo.market);
+      : Store.getAllStocks().find(s => s.symbol === stockInfo.symbol && s.market === stockInfo.market);
     if (!stock) return null;
 
     const market = stock.market || 'us';
@@ -1479,7 +1763,7 @@ const Pages = (() => {
   }
 
   async function refreshAllStockPrices() {
-    const stocks = Store.getStocks();
+    const stocks = getStocksForAssetView();
     if (stocks.length === 0) return;
 
     const usStocks = stocks.filter(s => (s.market || 'us') === 'us');
@@ -1545,7 +1829,7 @@ const Pages = (() => {
 
   async function fetchAndRefresh(stockId) {
     Utils.showToast('更新中...');
-    const stock = Store.getStocks().find(s => s.id === stockId);
+    const stock = Store.getAllStocks().find(s => s.id === stockId);
     if (!stock) return;
     const price = await fetchSingleStockPrice(stock);
     if (price) {
@@ -1564,11 +1848,12 @@ const Pages = (() => {
 
   function showAddAccount(editAccount) {
     const isEdit = !!editAccount;
+    const isHouseFund = assetView === 'house_fund';
     const ACCOUNT_ICONS = ['🏦', '💰', '🏧', '💳', '🐷', '📱', '💵', '🪙'];
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${isEdit ? '編輯帳戶' : '新增帳戶'}</div>
+        <div class="modal-title">${isEdit ? '編輯帳戶' : (isHouseFund ? '新增買房基金帳戶' : '新增帳戶')}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="form-grid">
@@ -1671,7 +1956,8 @@ const Pages = (() => {
       name,
       icon: document.getElementById('acct-icon-val').value,
       balance: parseFloat(document.getElementById('acct-balance').value) || 0,
-      ownerId: me,
+      assetScope: assetView,
+      ownerId: assetView === 'house_fund' ? 'house_fund' : me,
     };
 
     if (editId) {
@@ -1742,6 +2028,9 @@ const Pages = (() => {
     const noteEl = document.getElementById('adjust-note');
     const note = noteEl ? noteEl.value.trim() : '';
 
+    const isHouseFundAcct = (account.assetScope || 'personal') === 'house_fund';
+    const walletType = isHouseFundAcct ? 'house_fund' : 'personal';
+
     if (mode === 'set') {
       Store.updateAccount(accountId, { balance: val });
       Utils.showToast('餘額已更新');
@@ -1755,7 +2044,7 @@ const Pages = (() => {
         note: '',
         date: Utils.todayStr(),
         userId: Store.getCurrentUser(),
-        walletType: 'personal',
+        walletType,
         creditCardId: '',
         accountId: accountId,
       });
@@ -1770,7 +2059,7 @@ const Pages = (() => {
         note: '',
         date: Utils.todayStr(),
         userId: Store.getCurrentUser(),
-        walletType: 'personal',
+        walletType,
         creditCardId: '',
         accountId: accountId,
       });
@@ -1778,7 +2067,7 @@ const Pages = (() => {
     }
 
     hideModal();
-    App.navigate('accounts');
+    App.navigate('wallet');
   }
 
   // ──────────── Settings ────────────
@@ -2807,6 +3096,7 @@ const Pages = (() => {
 
   function resetFilters() {
     walletFilter = 'shared';
+    assetView = 'personal';
     cardViewId = null;
     editingTx = null;
     addTxType = 'expense';
@@ -2880,6 +3170,11 @@ const Pages = (() => {
     togglePanel,
     renderCreditCards,
     setWalletFilter,
+    setAssetView,
+    openHouseFundAssets,
+    goAddHouseFund,
+    showEditHouseFundDeposit,
+    confirmHouseFundDeposit,
     setDashboardTab,
     setViewMode,
     selectCalendarDate,
