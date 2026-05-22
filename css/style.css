@@ -378,6 +378,54 @@ body {
   margin-top: 2px;
 }
 
+.asset-dual-card {
+  text-align: center;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+
+.asset-dual-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.asset-dual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+}
+
+.asset-dual-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.asset-dual-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.asset-dual-value.usd {
+  color: #2d6a4f;
+}
+
+.asset-dual-detail {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-align: left;
+}
+
 .asset-block.positive {
   background: rgba(122, 158, 126, 0.1);
 }

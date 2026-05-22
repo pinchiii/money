@@ -722,11 +722,12 @@ const Store = (() => {
       this.saveSettings(settings);
     },
 
-    getStockTotalValue(scope) {
-      return Utils.sumStocksMarketValueTwd(this.getStocks(scope));
-    },
-    getStockTotalCost(scope) {
-      return Utils.sumStocksCostTwd(this.getStocks(scope));
+    getStockTotalsByCurrency(scope) {
+      const stocks = this.getStocks(scope);
+      return {
+        tw: Utils.sumStocksMarketValueTw(stocks),
+        usd: Utils.sumStocksMarketValueUsd(stocks),
+      };
     },
 
     exportData() {

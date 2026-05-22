@@ -104,11 +104,10 @@ const Pages = (() => {
     const myStocks = Store.getStocks();
     const dashUsStocks = myStocks.filter(s => (s.market || 'us') === 'us');
     const dashTwStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
-    const dashUsValue = Utils.sumStocksMarketValueTwd(dashUsStocks);
-    const dashUsCost = Utils.sumStocksCostTwd(dashUsStocks);
-    const dashUsValueUsd = Utils.sumStocksMarketValueUsd(dashUsStocks);
-    const dashTwValue = Utils.sumStocksMarketValueTwd(dashTwStocks);
-    const dashTwCost = Utils.sumStocksCostTwd(dashTwStocks);
+    const dashUsValue = Utils.sumStocksMarketValueUsd(dashUsStocks);
+    const dashUsCost = Utils.sumStocksCostUsd(dashUsStocks);
+    const dashTwValue = Utils.sumStocksMarketValueTw(dashTwStocks);
+    const dashTwCost = Utils.sumStocksCostTw(dashTwStocks);
 
     const renderTxList = (txs, emptyMsg) => {
       if (txs.length === 0) return `<div class="dash-empty">${emptyMsg}</div>`;
@@ -167,8 +166,7 @@ const Pages = (() => {
             ${dashUsStocks.length > 0 ? `
               <div class="asset-block ${dashUsValue - dashUsCost >= 0 ? 'positive' : 'negative'}">
                 <div class="asset-label">🇺🇸 美股市值</div>
-                <div class="asset-value">${Utils.formatAmount(dashUsValue)}</div>
-                <div class="asset-sub">${Utils.formatUSD(dashUsValueUsd)}</div>
+                <div class="asset-value">${Utils.formatUSD(dashUsValue)}</div>
               </div>
             ` : ''}
             ${dashTwStocks.length > 0 ? `
@@ -982,15 +980,16 @@ const Pages = (() => {
     const viewAccounts = getAccountsForAssetView();
     const totalBalance = viewAccounts.reduce((s, a) => s + (a.balance || 0), 0);
     const myStocks = Store.getStocks('personal');
-    const stockTotalValue = Utils.sumStocksMarketValueTwd(myStocks);
-    const totalAssets = totalBalance + stockTotalValue;
     const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
     const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
-    const usTotalValue = Utils.sumStocksMarketValueTwd(usStocks);
-    const usTotalCost = Utils.sumStocksCostTwd(usStocks);
-    const usTotalValueUsd = Utils.sumStocksMarketValueUsd(usStocks);
-    const twTotalValue = Utils.sumStocksMarketValueTwd(twStocks);
-    const twTotalCost = Utils.sumStocksCostTwd(twStocks);
+    const twStockValue = Utils.sumStocksMarketValueTw(myStocks);
+    const usStockValue = Utils.sumStocksMarketValueUsd(myStocks);
+    const twAssets = totalBalance + twStockValue;
+    const usAssets = usStockValue;
+    const usTotalValue = Utils.sumStocksMarketValueUsd(usStocks);
+    const usTotalCost = Utils.sumStocksCostUsd(usStocks);
+    const twTotalValue = Utils.sumStocksMarketValueTw(twStocks);
+    const twTotalCost = Utils.sumStocksCostTw(twStocks);
     const usPnl = usTotalValue - usTotalCost;
     const twPnl = twTotalValue - twTotalCost;
 
@@ -998,10 +997,10 @@ const Pages = (() => {
       if (stocks.length === 0) return '';
       return stocks.map(stock => {
         const m = stock.market || 'us';
-        const mktValTwd = Utils.stockMarketValueTwd(stock);
-        const costTwd = Utils.stockCostTwd(stock);
-        const spnl = mktValTwd - costTwd;
-        const pnlPct = costTwd > 0 ? (spnl / costTwd * 100) : 0;
+        const cost = Utils.stockCostNative(stock);
+        const mktVal = Utils.stockMarketValueNative(stock);
+        const spnl = mktVal - cost;
+        const pnlPct = cost > 0 ? (spnl / cost * 100) : 0;
         const fmt = (v) => Utils.formatStockPrice(v, m);
         return `
           <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
@@ -1017,23 +1016,25 @@ const Pages = (() => {
             </div>
             <div class="stock-card-bottom">
               <span>${stock.shares} 股 ・ 均價 ${fmt(stock.avgCost)}</span>
-              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${spnl >= 0 ? '+' : ''}${Utils.formatAmount(spnl)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
+              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(spnl, m)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
             </div>
           </div>
         `;
       }).join('');
     };
 
+    const twParts = [
+      totalBalance > 0 ? `現金 ${Utils.formatAmount(totalBalance)}` : '',
+      twStockValue > 0 ? `台股 ${Utils.formatStockPrice(twStockValue, 'tse')}` : '',
+    ];
+    const usParts = [
+      usStockValue > 0 ? `美股 ${Utils.formatUSD(usStockValue)}` : '',
+    ];
+
     return `
       ${renderAssetViewTabs('personal')}
 
-      <div class="card" style="text-align:center;padding:20px">
-        <div class="card-title">個人總資產</div>
-        <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalAssets)}</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">
-          現金 ${Utils.formatAmount(totalBalance)}${myStocks.length > 0 ? ` ・ 股票 ${Utils.formatAmount(stockTotalValue)}` : ''}
-        </div>
-      </div>
+      ${renderAssetDualHero('個人資產', twAssets, usAssets, twParts, usParts)}
 
       <div class="wallet-section-title">帳戶</div>
 
@@ -1080,25 +1081,24 @@ const Pages = (() => {
             <div class="collapsible-header" onclick="Pages.togglePanel(this)">
               <div class="collapsible-title">🇺🇸 美股 <span class="collapsible-count">${usStocks.length} 支</span></div>
               <div class="collapsible-summary">
-                <span>市值 ${Utils.formatAmount(usTotalValue)}</span>
-                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatAmount(usPnl)}</span>
+                <span>市值 ${Utils.formatUSD(usTotalValue)}</span>
+                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(usPnl, 'us')}</span>
               </div>
               <div class="collapsible-arrow">▾</div>
             </div>
             <div class="collapsible-body collapsed">
               <div class="stock-summary">
                 <div class="stock-summary-item">
-                  <div class="stock-summary-label">市值（台幣）</div>
-                  <div class="stock-summary-value">${Utils.formatAmount(usTotalValue)}</div>
-                  <div class="stock-summary-sub">${Utils.formatUSD(usTotalValueUsd)}</div>
+                  <div class="stock-summary-label">市值（美金）</div>
+                  <div class="stock-summary-value">${Utils.formatUSD(usTotalValue)}</div>
                 </div>
                 <div class="stock-summary-item">
-                  <div class="stock-summary-label">成本（台幣）</div>
-                  <div class="stock-summary-value">${Utils.formatAmount(usTotalCost)}</div>
+                  <div class="stock-summary-label">成本（美金）</div>
+                  <div class="stock-summary-value">${Utils.formatUSD(usTotalCost)}</div>
                 </div>
                 <div class="stock-summary-item">
-                  <div class="stock-summary-label">損益（台幣）</div>
-                  <div class="stock-summary-value ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatAmount(usPnl)}</div>
+                  <div class="stock-summary-label">損益（美金）</div>
+                  <div class="stock-summary-value ${usPnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(usPnl, 'us')}</div>
                 </div>
               </div>
               ${renderStockGroup(usStocks)}
@@ -1112,7 +1112,7 @@ const Pages = (() => {
               <div class="collapsible-title">🇹🇼 台股 <span class="collapsible-count">${twStocks.length} 支</span></div>
               <div class="collapsible-summary">
                 <span>市值 ${Utils.formatStockPrice(twTotalValue, 'tse')}</span>
-                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${twPnl >= 0 ? '+' : ''}${Utils.formatStockPrice(twPnl, 'tse')}</span>
+                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(twPnl, 'tse')}</span>
               </div>
               <div class="collapsible-arrow">▾</div>
             </div>
@@ -1167,6 +1167,35 @@ const Pages = (() => {
     `;
   }
 
+  function renderAssetDualHero(title, twTotal, usdTotal, twParts, usdParts) {
+    const twLine = (twParts || []).filter(Boolean).join(' ・ ');
+    const usdLine = (usdParts || []).filter(Boolean).join(' ・ ');
+    const showUsd = usdTotal > 0 || usdLine;
+    return `
+      <div class="card asset-dual-card">
+        <div class="card-title" style="text-align:center">${title}</div>
+        <div class="asset-dual-rows">
+          <div class="asset-dual-row">
+            <span class="asset-dual-label">🇹🇼 台幣資產</span>
+            <span class="asset-dual-value">${Utils.formatAmount(twTotal)}</span>
+          </div>
+          ${showUsd ? `
+            <div class="asset-dual-row">
+              <span class="asset-dual-label">🇺🇸 美金資產</span>
+              <span class="asset-dual-value usd">${Utils.formatUSD(usdTotal)}</span>
+            </div>
+          ` : ''}
+        </div>
+        ${twLine || usdLine ? `
+          <div class="asset-dual-detail">
+            ${twLine ? `<div>台幣：${twLine}</div>` : ''}
+            ${usdLine ? `<div>美金：${usdLine}</div>` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   function renderHouseFundDepositCard(field, icon, label, amount) {
     return `
       <div class="deposit-card">
@@ -1189,15 +1218,16 @@ const Pages = (() => {
   function renderHouseFundWallet() {
     const balances = Store.getHouseFundBalances();
     const myStocks = Store.getStocks('house_fund');
-    const stockTotalValue = Utils.sumStocksMarketValueTwd(myStocks);
-    const totalAssets = balances.cashDeposit + stockTotalValue;
     const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
     const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
-    const usTotalValue = Utils.sumStocksMarketValueTwd(usStocks);
-    const usTotalCost = Utils.sumStocksCostTwd(usStocks);
-    const usTotalValueUsd = Utils.sumStocksMarketValueUsd(usStocks);
-    const twTotalValue = Utils.sumStocksMarketValueTwd(twStocks);
-    const twTotalCost = Utils.sumStocksCostTwd(twStocks);
+    const twStockValue = Utils.sumStocksMarketValueTw(myStocks);
+    const usStockValue = Utils.sumStocksMarketValueUsd(myStocks);
+    const twAssets = balances.cashDeposit + twStockValue;
+    const usAssets = usStockValue;
+    const usTotalValue = Utils.sumStocksMarketValueUsd(usStocks);
+    const usTotalCost = Utils.sumStocksCostUsd(usStocks);
+    const twTotalValue = Utils.sumStocksMarketValueTw(twStocks);
+    const twTotalCost = Utils.sumStocksCostTw(twStocks);
     const usPnl = usTotalValue - usTotalCost;
     const twPnl = twTotalValue - twTotalCost;
 
@@ -1205,10 +1235,10 @@ const Pages = (() => {
       if (stocks.length === 0) return '';
       return stocks.map(stock => {
         const m = stock.market || 'us';
-        const mktValTwd = Utils.stockMarketValueTwd(stock);
-        const costTwd = Utils.stockCostTwd(stock);
-        const spnl = mktValTwd - costTwd;
-        const pnlPct = costTwd > 0 ? (spnl / costTwd * 100) : 0;
+        const cost = Utils.stockCostNative(stock);
+        const mktVal = Utils.stockMarketValueNative(stock);
+        const spnl = mktVal - cost;
+        const pnlPct = cost > 0 ? (spnl / cost * 100) : 0;
         const fmt = (v) => Utils.formatStockPrice(v, m);
         return `
           <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
@@ -1223,12 +1253,20 @@ const Pages = (() => {
             </div>
             <div class="stock-card-bottom">
               <span>${stock.shares} 股 ・ 均價 ${fmt(stock.avgCost)}</span>
-              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${spnl >= 0 ? '+' : ''}${Utils.formatAmount(spnl)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
+              <span class="stock-pnl ${spnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(spnl, m)} (${spnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</span>
             </div>
           </div>
         `;
       }).join('');
     };
+
+    const twParts = [
+      balances.cashDeposit > 0 ? `存款 ${Utils.formatAmount(balances.cashDeposit)}` : '',
+      twStockValue > 0 ? `台股 ${Utils.formatStockPrice(twStockValue, 'tse')}` : '',
+    ];
+    const usParts = [
+      usStockValue > 0 ? `美股 ${Utils.formatUSD(usStockValue)}` : '',
+    ];
 
     return `
       ${renderAssetViewTabs('house_fund')}
@@ -1239,14 +1277,7 @@ const Pages = (() => {
         <button type="button" class="asset-quick-btn" onclick="Pages.showAddStock()">📈 新增／編輯股票</button>
       </div>
 
-      <div class="card" style="text-align:center;padding:20px">
-        <div class="card-title">買房基金總資產</div>
-        <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalAssets)}</div>
-        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">
-          存款 ${Utils.formatAmount(balances.cashDeposit)}
-          ${myStocks.length > 0 ? ` ・ 持股市值 ${Utils.formatAmount(stockTotalValue)}` : ''}
-        </div>
-      </div>
+      ${renderAssetDualHero('買房基金資產', twAssets, usAssets, twParts, usParts)}
 
       <div class="wallet-section-title">存款</div>
       ${renderHouseFundDepositCard('cashDeposit', '🏦', '資產存款', balances.cashDeposit)}
@@ -1262,17 +1293,16 @@ const Pages = (() => {
             <div class="collapsible-header" onclick="Pages.togglePanel(this)">
               <div class="collapsible-title">🇺🇸 美股 <span class="collapsible-count">${usStocks.length} 支</span></div>
               <div class="collapsible-summary">
-                <span>市值 ${Utils.formatAmount(usTotalValue)}</span>
-                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${usPnl >= 0 ? '+' : ''}${Utils.formatAmount(usPnl)}</span>
+                <span>市值 ${Utils.formatUSD(usTotalValue)}</span>
+                <span class="stock-pnl ${usPnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(usPnl, 'us')}</span>
               </div>
               <div class="collapsible-arrow">▾</div>
             </div>
             <div class="collapsible-body collapsed">
               <div class="stock-summary" style="margin-bottom:8px">
                 <div class="stock-summary-item">
-                  <div class="stock-summary-label">市值（台幣）</div>
-                  <div class="stock-summary-value">${Utils.formatAmount(usTotalValue)}</div>
-                  <div class="stock-summary-sub">${Utils.formatUSD(usTotalValueUsd)}</div>
+                  <div class="stock-summary-label">市值（美金）</div>
+                  <div class="stock-summary-value">${Utils.formatUSD(usTotalValue)}</div>
                 </div>
               </div>
               ${renderStockGroup(usStocks)}
@@ -1285,7 +1315,7 @@ const Pages = (() => {
               <div class="collapsible-title">🇹🇼 台股 <span class="collapsible-count">${twStocks.length} 支</span></div>
               <div class="collapsible-summary">
                 <span>市值 ${Utils.formatStockPrice(twTotalValue, 'tse')}</span>
-                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${twPnl >= 0 ? '+' : ''}${Utils.formatStockPrice(twPnl, 'tse')}</span>
+                <span class="stock-pnl ${twPnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(twPnl, 'tse')}</span>
               </div>
               <div class="collapsible-arrow">▾</div>
             </div>
@@ -1541,11 +1571,13 @@ const Pages = (() => {
     const txs = Store.getStockTransactions(stockId);
     const m = stock.market || 'us';
     const fmt = (v) => Utils.formatStockPrice(v, m);
-    const mktValTwd = Utils.stockMarketValueTwd(stock);
-    const costTwd = Utils.stockCostTwd(stock);
-    const pnl = mktValTwd - costTwd;
-    const pnlPct = costTwd > 0 ? (pnl / costTwd * 100) : 0;
-    const isUs = !Utils.isTwMarket(m);
+    const mktVal = Utils.stockMarketValueNative(stock);
+    const cost = Utils.stockCostNative(stock);
+    const pnl = mktVal - cost;
+    const pnlPct = cost > 0 ? (pnl / cost * 100) : 0;
+    const valueFmt = Utils.isTwMarket(m)
+      ? (v) => Utils.formatStockPrice(v, m)
+      : Utils.formatUSD;
 
     showModal(`
       <div class="modal-header">
@@ -1555,7 +1587,6 @@ const Pages = (() => {
       <div class="stock-detail-hero">
         <div class="stock-detail-name">${stock.name || stock.symbol}</div>
         <div class="stock-detail-price">${fmt(stock.currentPrice)}</div>
-        ${isUs ? `<div class="stock-detail-time">匯率 1 USD = ${Utils.getUsdToTwdRate()} TWD</div>` : ''}
         ${stock.lastUpdated ? `<div class="stock-detail-time">更新於 ${new Date(stock.lastUpdated).toLocaleString('zh-TW')}</div>` : ''}
       </div>
 
@@ -1569,13 +1600,12 @@ const Pages = (() => {
           <div class="stock-detail-val">${fmt(stock.avgCost)}</div>
         </div>
         <div class="stock-detail-item">
-          <div class="stock-detail-label">市值（台幣）</div>
-          <div class="stock-detail-val">${Utils.formatAmount(mktValTwd)}</div>
-          ${isUs ? `<div class="stock-summary-sub">${Utils.formatUSD(stock.currentPrice * stock.shares)}</div>` : ''}
+          <div class="stock-detail-label">市值</div>
+          <div class="stock-detail-val">${valueFmt(mktVal)}</div>
         </div>
         <div class="stock-detail-item">
-          <div class="stock-detail-label">損益（台幣）</div>
-          <div class="stock-detail-val ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${Utils.formatAmount(pnl)} (${pnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</div>
+          <div class="stock-detail-label">損益</div>
+          <div class="stock-detail-val ${pnl >= 0 ? 'positive' : 'negative'}">${Utils.formatStockPnl(pnl, m)} (${pnl >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)</div>
         </div>
       </div>
 
@@ -2759,7 +2789,7 @@ const Pages = (() => {
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
-        美股輸入為美金，總資產與損益會依此匯率換算成台幣顯示。
+        僅供參考換算（總資產已分台幣、美金獨立計算，不會合併加總）。
       </p>
       <div class="form-grid">
         <div class="form-field">

@@ -90,13 +90,55 @@ const Utils = (() => {
     return (usd || 0) * getUsdToTwdRate();
   }
 
+  function stockMarketValueNative(stock) {
+    return (stock.currentPrice || 0) * (stock.shares || 0);
+  }
+
+  function stockCostNative(stock) {
+    return (stock.avgCost || 0) * (stock.shares || 0);
+  }
+
+  function sumStocksMarketValueTw(stocks) {
+    return stocks
+      .filter(st => isTwMarket(st.market || 'us'))
+      .reduce((s, st) => s + stockMarketValueNative(st), 0);
+  }
+
+  function sumStocksCostTw(stocks) {
+    return stocks
+      .filter(st => isTwMarket(st.market || 'us'))
+      .reduce((s, st) => s + stockCostNative(st), 0);
+  }
+
+  function sumStocksMarketValueUsd(stocks) {
+    return stocks
+      .filter(st => !isTwMarket(st.market || 'us'))
+      .reduce((s, st) => s + stockMarketValueNative(st), 0);
+  }
+
+  function sumStocksCostUsd(stocks) {
+    return stocks
+      .filter(st => !isTwMarket(st.market || 'us'))
+      .reduce((s, st) => s + stockCostNative(st), 0);
+  }
+
+  function formatStockPnl(amount, market) {
+    const sign = amount >= 0 ? '+' : '-';
+    const abs = Math.abs(amount);
+    if (isTwMarket(market)) {
+      return `${sign}${formatStockPrice(abs, market)}`;
+    }
+    return `${sign}${formatUSD(abs)}`;
+  }
+
+  // 換算台幣（僅供參考，不併入總資產）
   function stockMarketValueTwd(stock) {
-    const v = (stock.currentPrice || 0) * (stock.shares || 0);
+    const v = stockMarketValueNative(stock);
     return isTwMarket(stock.market || 'us') ? v : usdToTwd(v);
   }
 
   function stockCostTwd(stock) {
-    const v = (stock.avgCost || 0) * (stock.shares || 0);
+    const v = stockCostNative(stock);
     return isTwMarket(stock.market || 'us') ? v : usdToTwd(v);
   }
 
@@ -106,12 +148,6 @@ const Utils = (() => {
 
   function sumStocksCostTwd(stocks) {
     return stocks.reduce((s, st) => s + stockCostTwd(st), 0);
-  }
-
-  function sumStocksMarketValueUsd(stocks) {
-    return stocks
-      .filter(st => !isTwMarket(st.market || 'us'))
-      .reduce((s, st) => s + (st.currentPrice || 0) * (st.shares || 0), 0);
   }
 
   function formatUSD(amount) {
@@ -138,11 +174,17 @@ const Utils = (() => {
     getUsdToTwdRate,
     isTwMarket,
     usdToTwd,
+    stockMarketValueNative,
+    stockCostNative,
+    sumStocksMarketValueTw,
+    sumStocksCostTw,
+    sumStocksMarketValueUsd,
+    sumStocksCostUsd,
+    formatStockPnl,
     stockMarketValueTwd,
     stockCostTwd,
     sumStocksMarketValueTwd,
     sumStocksCostTwd,
-    sumStocksMarketValueUsd,
     getMarketLabel,
     formatDate,
     formatFullDate,
