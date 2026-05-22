@@ -19,12 +19,7 @@ const Store = (() => {
       { id: 'user2', name: '崇軒', emoji: '👦', pin: '' },
     ],
     currency: 'NT$',
-    houseFund: { cashDeposit: 0, stockCash: 0 },
-  };
-
-  const HOUSE_FUND_DEPOSIT_LABELS = {
-    cashDeposit: '資產存款',
-    stockCash: '股市存款',
+    houseFund: { cashDeposit: 0 },
   };
 
   const DEFAULT_EXPENSE_CATEGORIES = [
@@ -333,19 +328,17 @@ const Store = (() => {
       const s = this.getSettings();
       if (!s.houseFund) {
         const legacy = this.getHouseFundAccounts().reduce((sum, a) => sum + (a.balance || 0), 0);
-        s.houseFund = { cashDeposit: legacy, stockCash: 0 };
+        s.houseFund = { cashDeposit: legacy };
         this.saveSettings(s);
       }
       return {
         cashDeposit: Number(s.houseFund.cashDeposit || 0),
-        stockCash: Number(s.houseFund.stockCash || 0),
       };
     },
     saveHouseFundBalances(balances) {
       const s = this.getSettings();
       s.houseFund = {
         cashDeposit: Number(balances.cashDeposit ?? s.houseFund?.cashDeposit ?? 0),
-        stockCash: Number(balances.stockCash ?? s.houseFund?.stockCash ?? 0),
       };
       this.saveSettings(s);
       return s.houseFund;

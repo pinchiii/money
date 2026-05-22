@@ -1189,7 +1189,7 @@ const Pages = (() => {
     const balances = Store.getHouseFundBalances();
     const myStocks = Store.getStocks('house_fund');
     const stockTotalValue = myStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
-    const totalAssets = balances.cashDeposit + balances.stockCash + stockTotalValue;
+    const totalAssets = balances.cashDeposit + stockTotalValue;
     const usStocks = myStocks.filter(s => (s.market || 'us') === 'us');
     const twStocks = myStocks.filter(s => s.market === 'tse' || s.market === 'otc');
     const usTotalValue = usStocks.reduce((s, st) => s + st.currentPrice * st.shares, 0);
@@ -1241,16 +1241,13 @@ const Pages = (() => {
         <div class="card-title">買房基金總資產</div>
         <div style="font-size:28px;font-weight:800;color:var(--primary)">${Utils.formatAmount(totalAssets)}</div>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">
-          存款 ${Utils.formatAmount(balances.cashDeposit + balances.stockCash)}
+          存款 ${Utils.formatAmount(balances.cashDeposit)}
           ${myStocks.length > 0 ? ` ・ 持股市值 ${Utils.formatAmount(stockTotalValue)}` : ''}
         </div>
       </div>
 
       <div class="wallet-section-title">存款</div>
-      <div class="deposit-grid">
-        ${renderHouseFundDepositCard('cashDeposit', '🏦', '資產存款', balances.cashDeposit)}
-        ${renderHouseFundDepositCard('stockCash', '📈', '股市存款', balances.stockCash)}
-      </div>
+      ${renderHouseFundDepositCard('cashDeposit', '🏦', '資產存款', balances.cashDeposit)}
 
       <div class="wallet-section-title" style="margin-top:20px">
         股票持股
@@ -1300,7 +1297,7 @@ const Pages = (() => {
     `;
   }
 
-  const HOUSE_FUND_DEPOSIT_NAMES = { cashDeposit: '資產存款', stockCash: '股市存款' };
+  const HOUSE_FUND_DEPOSIT_NAMES = { cashDeposit: '資產存款' };
 
   function showEditHouseFundDeposit(field, mode) {
     const balances = Store.getHouseFundBalances();
