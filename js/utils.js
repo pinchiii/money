@@ -75,6 +75,45 @@ const Utils = (() => {
     'linear-gradient(135deg, #2D3436, #636E72)',
   ];
 
+  const DEFAULT_USD_TWD = 32;
+
+  function getUsdToTwdRate() {
+    const r = Number(Store.getSettings().usdToTwdRate);
+    return r > 0 ? r : DEFAULT_USD_TWD;
+  }
+
+  function isTwMarket(market) {
+    return market === 'tse' || market === 'otc';
+  }
+
+  function usdToTwd(usd) {
+    return (usd || 0) * getUsdToTwdRate();
+  }
+
+  function stockMarketValueTwd(stock) {
+    const v = (stock.currentPrice || 0) * (stock.shares || 0);
+    return isTwMarket(stock.market || 'us') ? v : usdToTwd(v);
+  }
+
+  function stockCostTwd(stock) {
+    const v = (stock.avgCost || 0) * (stock.shares || 0);
+    return isTwMarket(stock.market || 'us') ? v : usdToTwd(v);
+  }
+
+  function sumStocksMarketValueTwd(stocks) {
+    return stocks.reduce((s, st) => s + stockMarketValueTwd(st), 0);
+  }
+
+  function sumStocksCostTwd(stocks) {
+    return stocks.reduce((s, st) => s + stockCostTwd(st), 0);
+  }
+
+  function sumStocksMarketValueUsd(stocks) {
+    return stocks
+      .filter(st => !isTwMarket(st.market || 'us'))
+      .reduce((s, st) => s + (st.currentPrice || 0) * (st.shares || 0), 0);
+  }
+
   function formatUSD(amount) {
     return `$${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
@@ -96,6 +135,14 @@ const Utils = (() => {
     formatAmount,
     formatUSD,
     formatStockPrice,
+    getUsdToTwdRate,
+    isTwMarket,
+    usdToTwd,
+    stockMarketValueTwd,
+    stockCostTwd,
+    sumStocksMarketValueTwd,
+    sumStocksCostTwd,
+    sumStocksMarketValueUsd,
     getMarketLabel,
     formatDate,
     formatFullDate,

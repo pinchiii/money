@@ -365,6 +365,19 @@ body {
   font-weight: 800;
 }
 
+.asset-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.stock-summary-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
 .asset-block.positive {
   background: rgba(122, 158, 126, 0.1);
 }

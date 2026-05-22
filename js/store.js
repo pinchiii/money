@@ -19,6 +19,7 @@ const Store = (() => {
       { id: 'user2', name: '崇軒', emoji: '👦', pin: '' },
     ],
     currency: 'NT$',
+    usdToTwdRate: 32,
     houseFund: { cashDeposit: 0 },
   };
 
@@ -722,10 +723,10 @@ const Store = (() => {
     },
 
     getStockTotalValue(scope) {
-      return this.getStocks(scope).reduce((sum, s) => sum + (s.currentPrice || 0) * s.shares, 0);
+      return Utils.sumStocksMarketValueTwd(this.getStocks(scope));
     },
     getStockTotalCost(scope) {
-      return this.getStocks(scope).reduce((sum, s) => sum + s.avgCost * s.shares, 0);
+      return Utils.sumStocksCostTwd(this.getStocks(scope));
     },
 
     exportData() {
