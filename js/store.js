@@ -351,6 +351,13 @@ const Store = (() => {
       return b[field];
     },
 
+    getHouseFundDepositTxs(limit = 20) {
+      return this.getTransactions()
+        .filter(tx => tx.walletType === 'house_fund')
+        .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
+        .slice(0, limit);
+    },
+
     // ── Accounts ──
     getAccounts() {
       return loadCache(CACHE.accounts) || [];

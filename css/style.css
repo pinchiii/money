@@ -39,6 +39,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -748,6 +754,10 @@ body {
 .form-field input,
 .form-field select,
 .form-field textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 12px 14px;
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
@@ -999,6 +1009,8 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  overflow: hidden;
   animation: fadeIn 0.2s;
 }
 
@@ -1011,22 +1023,75 @@ body {
   border-radius: var(--radius) var(--radius) 0 0;
   width: 100%;
   max-width: 480px;
-  max-height: 90vh;
+  max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 12px));
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 20px 16px calc(16px + var(--safe-bottom));
   box-sizing: border-box;
   animation: slideUp 0.3s ease-out;
 }
 
+#modal-content .form-grid,
+#modal-content .modal-actions,
+#modal-content .stock-detail-grid,
+#modal-content .stock-detail-hero,
+#modal-content .category-grid,
+#modal-content .account-tx-list,
+#modal-content p {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#modal-content .category-grid {
+  width: 100%;
+}
+
+#modal-content input,
+#modal-content select,
+#modal-content textarea,
+#modal-content button {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .modal-title {
   font-size: 18px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.modal-balance-hero {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.modal-balance-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.modal-balance-value {
+  font-size: clamp(18px, 5vw, 22px);
+  font-weight: 800;
+  word-break: break-word;
+}
+
+.modal-amount-input {
+  font-size: clamp(18px, 5vw, 20px);
+  text-align: center;
   font-weight: 700;
 }
 
@@ -1993,6 +2058,95 @@ body {
 .deposit-card-actions {
   display: flex;
   gap: 6px;
+}
+
+.collapsible-body .hf-deposit-log {
+  margin: 0 -16px -16px;
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--border);
+}
+
+.hf-deposit-log {
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.hf-deposit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.hf-deposit-row:last-child {
+  border-bottom: none;
+}
+
+.hf-deposit-row:active {
+  background: var(--bg);
+}
+
+.hf-deposit-row-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hf-deposit-action {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.hf-deposit-action.income {
+  background: #E8F5E9;
+  color: var(--income-color);
+}
+
+.hf-deposit-action.expense {
+  background: #FFEBEE;
+  color: var(--expense-color);
+}
+
+.hf-deposit-user {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hf-deposit-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.hf-deposit-row-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.hf-deposit-amount {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.hf-deposit-amount.income { color: var(--income-color); }
+.hf-deposit-amount.expense { color: var(--expense-color); }
+
+.hf-deposit-date {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .asset-quick-btn {
