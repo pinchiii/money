@@ -1381,11 +1381,9 @@ const Pages = (() => {
     const note = noteEl ? noteEl.value.trim() : '';
 
     if (mode === 'set') {
-      balances[field] = val;
-      Store.saveHouseFundBalances(balances);
+      Store.setHouseFundBalance(val);
       Utils.showToast(`${label}已更新`);
     } else if (mode === 'income') {
-      Store.adjustHouseFundBalance(field, val);
       Store.addTransaction({
         amount: val,
         type: 'income',
@@ -1404,7 +1402,6 @@ const Pages = (() => {
         Utils.showToast('提出金額不能超過目前餘額');
         return;
       }
-      Store.adjustHouseFundBalance(field, -val);
       Store.addTransaction({
         amount: val,
         type: 'expense',

@@ -20,7 +20,7 @@ const Store = (() => {
     ],
     currency: 'NT$',
     usdToTwdRate: 32,
-    houseFund: { cashDeposit: 0 },
+    houseFund: { openingBalance: 0 },
   };
 
   const DEFAULT_EXPENSE_CATEGORIES = [
@@ -325,35 +325,48 @@ const Store = (() => {
     },
 
     // ── 買房基金存款（存在 settings，兩人共用）──
+    // 存款餘額 = openingBalance（切換時的起始基準）＋ 所有共同帳本/房基金交易淨額。
+    // 共同帳本收入＝存入(+)、支出＝提出(-)，房基金手動存入/提出同理。
+    houseFundTxNet() {
+      return this.getTransactions().reduce((sum, tx) => {
+        if (tx.walletType !== 'shared' && tx.walletType !== 'house_fund') return sum;
+        return sum + (tx.type === 'income' ? Number(tx.amount || 0) : -Number(tx.amount || 0));
+      }, 0);
+    },
     getHouseFundBalances() {
       const s = this.getSettings();
-      if (!s.houseFund) {
-        const legacy = this.getHouseFundAccounts().reduce((sum, a) => sum + (a.balance || 0), 0);
-        s.houseFund = { cashDeposit: legacy };
+      const txNet = this.houseFundTxNet();
+
+      // 已完成遷移 → 直接推導
+      if (s.houseFund && s.houseFund.openingBalance !== undefined) {
+        return { cashDeposit: Number(s.houseFund.openingBalance || 0) + txNet };
+      }
+
+      // 一次性遷移：把舊的累計數字 cashDeposit 轉成「只算今後」的起始基準，
+      // 讓切換當下顯示的餘額維持不變（過去的收支歸進 openingBalance）。
+      const legacy = Number(
+        s.houseFund && s.houseFund.cashDeposit != null
+          ? s.houseFund.cashDeposit
+          : this.getHouseFundAccounts().reduce((sum, a) => sum + (a.balance || 0), 0)
+      );
+      // 只有在雲端交易確實載入後才凍結起始基準，避免首次繪製時交易還沒同步就被錨定成空集合
+      if (loadCache(CACHE.transactions) !== null) {
+        s.houseFund = { openingBalance: legacy - txNet };
         this.saveSettings(s);
       }
-      return {
-        cashDeposit: Number(s.houseFund.cashDeposit || 0),
-      };
+      return { cashDeposit: legacy };
     },
-    saveHouseFundBalances(balances) {
+    // 設定餘額：反推 openingBalance，使顯示餘額等於 target
+    setHouseFundBalance(target) {
       const s = this.getSettings();
-      s.houseFund = {
-        cashDeposit: Number(balances.cashDeposit ?? s.houseFund?.cashDeposit ?? 0),
-      };
+      s.houseFund = { openingBalance: Number(target || 0) - this.houseFundTxNet() };
       this.saveSettings(s);
-      return s.houseFund;
-    },
-    adjustHouseFundBalance(field, delta) {
-      const b = this.getHouseFundBalances();
-      b[field] = (b[field] || 0) + delta;
-      this.saveHouseFundBalances(b);
-      return b[field];
+      return Number(target || 0);
     },
 
     getHouseFundDepositTxs(limit = 20) {
       return this.getTransactions()
-        .filter(tx => tx.walletType === 'house_fund')
+        .filter(tx => tx.walletType === 'house_fund' || tx.walletType === 'shared')
         .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
         .slice(0, limit);
     },
