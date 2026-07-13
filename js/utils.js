@@ -1,7 +1,15 @@
 const Utils = (() => {
+  // HTML 跳脫：所有使用者輸入的字串插進 innerHTML 前都要經過這裡，防 XSS
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, ch => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
+  }
+
   function formatAmount(amount, currency) {
     const c = currency || Store.getSettings().currency;
-    return `${c} ${Number(amount).toLocaleString('zh-TW')}`;
+    // currency 來自可同步的設定資料，輸出常直接進 innerHTML，跳脫以防萬一
+    return `${esc(c)} ${Number(amount).toLocaleString('zh-TW')}`;
   }
 
   function formatDate(dateStr) {
@@ -168,6 +176,7 @@ const Utils = (() => {
   }
 
   return {
+    esc,
     formatAmount,
     formatUSD,
     formatStockPrice,

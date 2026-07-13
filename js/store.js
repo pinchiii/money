@@ -11,6 +11,8 @@ const Store = (() => {
     stocks: 'pinchi_stocks',
     stockTxs: 'pinchi_stock_txs',
     finnhubKey: 'pinchi_finnhub_key',
+    pendingWrites: 'pinchi_pending_writes',
+    billBackfillFrom: 'pinchi_bill_backfill_from',
   };
 
   const DEFAULT_SETTINGS = {
@@ -51,7 +53,101 @@ const Store = (() => {
   }
 
   function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    // 時間戳 + 8 字元加密隨機，降低雙裝置同毫秒 / 大量匯入時的碰撞機率
+    let rand = '';
+    if (window.crypto && crypto.getRandomValues) {
+      const bytes = crypto.getRandomValues(new Uint8Array(8));
+      rand = Array.from(bytes, b => (b % 36).toString(36)).join('');
+    } else {
+      rand = Math.random().toString(36).slice(2, 10);
+    }
+    return Date.now().toString(36) + rand;
+  }
+
+  // ── 雲端寫入（失敗可察覺 + 離線暫存補傳）──
+  // Supabase 失敗是 resolve 成 {error} 而非 reject，所以一律檢查 res.error。
+  // 失敗的寫入存進 pendingWrites，下次 syncFromCloud 前先補傳，避免被雲端資料覆蓋而遺失。
+  let _lastSyncErrToast = 0;
+  function notifySyncError(msg) {
+    console.error('[雲端同步失敗]', msg);
+    const now = Date.now();
+    if (now - _lastSyncErrToast > 5000 && typeof Utils !== 'undefined') {
+      _lastSyncErrToast = now;
+      Utils.showToast('⚠️ 雲端同步失敗，已暫存，恢復連線後自動補傳');
+    }
+  }
+
+  function getPendingWrites() {
+    return loadCache(CACHE.pendingWrites) || [];
+  }
+
+  function enqueuePending(op) {
+    const q = getPendingWrites();
+    q.push(op);
+    saveCache(CACHE.pendingWrites, q);
+  }
+
+  async function execSettingsMerge(op) {
+    // 只覆蓋這次變更的 key，其餘以雲端最新值為準，避免整包蓋掉對方的修改
+    const cur = await db.from('settings').select('data').eq('id', 'global').single();
+    const base = (cur.data && cur.data.data) ? cur.data.data : {};
+    const merged = { ...op.payload.data, ...base };
+    op.payload.keys.forEach(k => { merged[k] = op.payload.data[k]; });
+    saveCache(CACHE.settings, merged);
+    return db.from('settings').upsert({ id: 'global', data: merged, updated_at: new Date().toISOString() });
+  }
+
+  function execOp(op) {
+    if (op.op === 'merge_settings') return execSettingsMerge(op);
+    const t = db.from(op.table);
+    if (op.op === 'insert') return t.insert(op.payload);
+    if (op.op === 'upsert') return t.upsert(op.payload);
+    if (op.op === 'update') {
+      let q = t.update(op.payload);
+      Object.entries(op.match || {}).forEach(([k, v]) => { q = q.eq(k, v); });
+      return q;
+    }
+    if (op.op === 'delete') {
+      let q = t.delete();
+      Object.entries(op.match || {}).forEach(([k, v]) => { q = q.eq(k, v); });
+      return q;
+    }
+    return Promise.resolve({ error: { message: 'unknown op: ' + op.op } });
+  }
+
+  function cloudWrite(table, opType, payload, match) {
+    const op = { table, op: opType, payload, match };
+    Promise.resolve(execOp(op)).then(
+      res => {
+        if (res && res.error) {
+          enqueuePending(op);
+          notifySyncError(res.error.message);
+        }
+      },
+      err => {
+        enqueuePending(op);
+        notifySyncError(err && err.message);
+      }
+    );
+  }
+
+  // 回傳仍未成功的資料表集合，syncFromCloud 會跳過覆蓋這些表的本機快取
+  async function flushPendingWrites() {
+    const queue = getPendingWrites();
+    if (queue.length === 0) return new Set();
+    const remaining = [];
+    for (const op of queue) {
+      try {
+        const res = await execOp(op);
+        // 23505 = 重複鍵：代表上次其實已寫入成功，直接視為完成
+        if (res && res.error && res.error.code !== '23505') remaining.push(op);
+      } catch {
+        remaining.push(op);
+      }
+    }
+    saveCache(CACHE.pendingWrites, remaining);
+    if (remaining.length > 0) notifySyncError(`仍有 ${remaining.length} 筆變更未同步`);
+    return new Set(remaining.map(o => o.table));
   }
 
   // Supabase helper: convert DB row to app format
@@ -201,6 +297,8 @@ const Store = (() => {
 
   // ── Sync from Supabase on startup ──
   async function syncFromCloud() {
+    // 先補傳離線/失敗的寫入；還沒送出去的表不能被雲端資料覆蓋，否則本機新紀錄會遺失
+    const pending = await flushPendingWrites();
     try {
       const [txRes, cardRes, accRes, settRes, catRes, billRes, stockRes, stockTxRes] = await Promise.all([
         db.from('transactions').select('*').order('created_at', { ascending: false }),
@@ -213,34 +311,34 @@ const Store = (() => {
         db.from('stock_transactions').select('*').order('created_at', { ascending: false }),
       ]);
 
-      if (txRes.data) {
+      if (txRes.data && !pending.has('transactions')) {
         saveCache(CACHE.transactions, txRes.data.map(dbTxToApp));
       }
-      if (cardRes.data) {
+      if (cardRes.data && !pending.has('credit_cards')) {
         saveCache(CACHE.creditCards, cardRes.data.map(dbCardToApp));
       }
-      if (accRes.data) {
+      if (accRes.data && !pending.has('accounts')) {
         saveCache(CACHE.accounts, accRes.data.map(dbAccToApp));
       }
-      if (settRes.data) {
+      if (settRes.data && !pending.has('settings')) {
         saveCache(CACHE.settings, settRes.data.data);
         if (settRes.data.data?.finnhubKey) {
           saveCache(CACHE.finnhubKey, settRes.data.data.finnhubKey);
         }
       }
-      if (catRes.data) {
+      if (catRes.data && !pending.has('categories')) {
         const expCats = catRes.data.filter(c => c.type === 'expense').map(dbCatToApp);
         const incCats = catRes.data.filter(c => c.type === 'income').map(dbCatToApp);
         if (expCats.length > 0) saveCache(CACHE.expenseCats, expCats);
         if (incCats.length > 0) saveCache(CACHE.incomeCats, incCats);
       }
-      if (billRes.data) {
+      if (billRes.data && !pending.has('auto_bills')) {
         saveCache(CACHE.autoBills, billRes.data.map(b => b.bill_key));
       }
-      if (stockRes.data) {
+      if (stockRes.data && !pending.has('stocks')) {
         saveCache(CACHE.stocks, stockRes.data.map(dbStockToApp));
       }
-      if (stockTxRes.data) {
+      if (stockTxRes.data && !pending.has('stock_transactions')) {
         saveCache(CACHE.stockTxs, stockTxRes.data.map(dbStockTxToApp));
       }
       return true;
@@ -264,7 +362,7 @@ const Store = (() => {
     if (type === 'income') saveCache(CACHE.incomeCats, cats);
     else saveCache(CACHE.expenseCats, cats);
 
-    db.from('categories').insert({ cat_id: cat.id, icon: cat.icon, name: cat.name, type }).then();
+    cloudWrite('categories', 'insert', { cat_id: cat.id, icon: cat.icon, name: cat.name, type });
     return cats;
   }
 
@@ -279,7 +377,7 @@ const Store = (() => {
     const dbUpdates = {};
     if (updates.icon) dbUpdates.icon = updates.icon;
     if (updates.name) dbUpdates.name = updates.name;
-    db.from('categories').update(dbUpdates).eq('cat_id', id).eq('type', type).then();
+    cloudWrite('categories', 'update', dbUpdates, { cat_id: id, type });
     return cats;
   }
 
@@ -289,7 +387,7 @@ const Store = (() => {
     if (type === 'income') saveCache(CACHE.incomeCats, cats);
     else saveCache(CACHE.expenseCats, cats);
 
-    db.from('categories').delete().eq('cat_id', id).eq('type', type).then();
+    cloudWrite('categories', 'delete', null, { cat_id: id, type });
     return cats;
   }
 
@@ -319,9 +417,15 @@ const Store = (() => {
     getSettings() {
       return loadCache(CACHE.settings) || JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     },
-    saveSettings(s) {
+    // changedKeys：這次實際變更的頂層 key（如 ['houseFund']）。
+    // 有指定時只合併覆蓋這些 key，避免整包 upsert 把對方裝置剛改的其他設定蓋掉。
+    saveSettings(s, changedKeys) {
       saveCache(CACHE.settings, s);
-      db.from('settings').upsert({ id: 'global', data: s, updated_at: new Date().toISOString() }).then();
+      if (changedKeys && changedKeys.length) {
+        cloudWrite('settings', 'merge_settings', { keys: changedKeys, data: s });
+      } else {
+        cloudWrite('settings', 'upsert', { id: 'global', data: s, updated_at: new Date().toISOString() });
+      }
     },
 
     // ── 買房基金存款（存在 settings，兩人共用）──
@@ -352,7 +456,7 @@ const Store = (() => {
       // 只有在雲端交易確實載入後才凍結起始基準，避免首次繪製時交易還沒同步就被錨定成空集合
       if (loadCache(CACHE.transactions) !== null) {
         s.houseFund = { openingBalance: legacy - txNet };
-        this.saveSettings(s);
+        this.saveSettings(s, ['houseFund']);
       }
       return { cashDeposit: legacy };
     },
@@ -360,7 +464,7 @@ const Store = (() => {
     setHouseFundBalance(target) {
       const s = this.getSettings();
       s.houseFund = { openingBalance: Number(target || 0) - this.houseFundTxNet() };
-      this.saveSettings(s);
+      this.saveSettings(s, ['houseFund']);
       return Number(target || 0);
     },
 
@@ -396,7 +500,7 @@ const Store = (() => {
       }
       list.push(account);
       saveCache(CACHE.accounts, list);
-      db.from('accounts').insert(appAccToDb(account)).then();
+      cloudWrite('accounts', 'insert', appAccToDb(account));
       return account;
     },
     updateAccount(id, updates) {
@@ -405,13 +509,13 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.accounts, list);
-        db.from('accounts').update(appAccToDb(list[idx])).eq('id', id).then();
+        cloudWrite('accounts', 'update', appAccToDb(list[idx]), { id });
       }
     },
     deleteAccount(id) {
       const list = this.getAccounts().filter(a => a.id !== id);
       saveCache(CACHE.accounts, list);
-      db.from('accounts').delete().eq('id', id).then();
+      cloudWrite('accounts', 'delete', null, { id });
     },
     adjustAccountBalance(id, delta) {
       const list = this.getAccounts();
@@ -419,7 +523,7 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx].balance = (list[idx].balance || 0) + delta;
         saveCache(CACHE.accounts, list);
-        db.from('accounts').update({ balance: list[idx].balance }).eq('id', id).then();
+        cloudWrite('accounts', 'update', { balance: list[idx].balance }, { id });
       }
     },
 
@@ -436,10 +540,9 @@ const Store = (() => {
     },
 
     getVisibleTransactionsForMonth(year, month) {
-      return this.getVisibleTransactions().filter(tx => {
-        const d = new Date(tx.date);
-        return d.getFullYear() === year && d.getMonth() === month;
-      });
+      // 直接比對 YYYY-MM 字串，避免 new Date(tx.date) 的 UTC 解析在時區邊界跑掉
+      const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      return this.getVisibleTransactions().filter(tx => (tx.date || '').startsWith(prefix));
     },
 
     getMyCardIds() {
@@ -462,13 +565,22 @@ const Store = (() => {
       });
     },
 
+    // 交易對連動帳戶餘額的影響：income 為 +、expense 為 −。
+    // sign = +1 套用（新增）、-1 回沖（刪除或編輯前的舊值）
+    applyTxToAccount(tx, sign) {
+      if (!tx || !tx.accountId) return;
+      const delta = (tx.type === 'income' ? 1 : -1) * Number(tx.amount || 0) * sign;
+      if (delta) this.adjustAccountBalance(tx.accountId, delta);
+    },
+
     addTransaction(tx) {
       const list = this.getTransactions();
       tx.id = uid();
       tx.createdAt = new Date().toISOString();
       list.unshift(tx);
       saveCache(CACHE.transactions, list);
-      db.from('transactions').insert(appTxToDb(tx)).then();
+      cloudWrite('transactions', 'insert', appTxToDb(tx));
+      this.applyTxToAccount(tx, 1);
       return tx;
     },
 
@@ -481,7 +593,7 @@ const Store = (() => {
       });
       saveCache(CACHE.transactions, list);
       const dbRows = txs.map(appTxToDb);
-      db.from('transactions').insert(dbRows).then();
+      cloudWrite('transactions', 'insert', dbRows);
       return txs.length;
     },
 
@@ -489,16 +601,25 @@ const Store = (() => {
       const list = this.getTransactions();
       const idx = list.findIndex(t => t.id === id);
       if (idx >= 0) {
-        list[idx] = { ...list[idx], ...updates };
+        const old = list[idx];
+        const merged = { ...old, ...updates };
+        // 先回沖舊值再套用新值，讓連動帳戶餘額跟著編輯結果修正
+        this.applyTxToAccount(old, -1);
+        list[idx] = merged;
         saveCache(CACHE.transactions, list);
-        db.from('transactions').update(appTxToDb(list[idx])).eq('id', id).then();
+        cloudWrite('transactions', 'update', appTxToDb(merged), { id });
+        this.applyTxToAccount(merged, 1);
       }
     },
 
     deleteTransaction(id) {
-      const list = this.getTransactions().filter(t => t.id !== id);
+      const all = this.getTransactions();
+      const target = all.find(t => t.id === id);
+      const list = all.filter(t => t.id !== id);
       saveCache(CACHE.transactions, list);
-      db.from('transactions').delete().eq('id', id).then();
+      cloudWrite('transactions', 'delete', null, { id });
+      // 刪除有連動帳戶的交易（收入入帳／手動扣款／信用卡自動扣款）時回沖餘額
+      this.applyTxToAccount(target, -1);
     },
 
     // ── Credit Cards ──
@@ -516,7 +637,7 @@ const Store = (() => {
       card.id = uid();
       list.push(card);
       saveCache(CACHE.creditCards, list);
-      db.from('credit_cards').insert(appCardToDb(card)).then();
+      cloudWrite('credit_cards', 'insert', appCardToDb(card));
       return card;
     },
 
@@ -526,33 +647,23 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.creditCards, list);
-        db.from('credit_cards').update(appCardToDb(list[idx])).eq('id', id).then();
+        cloudWrite('credit_cards', 'update', appCardToDb(list[idx]), { id });
       }
     },
 
     deleteCreditCard(id) {
       const list = this.getCreditCards().filter(c => c.id !== id);
       saveCache(CACHE.creditCards, list);
-      db.from('credit_cards').delete().eq('id', id).then();
+      cloudWrite('credit_cards', 'delete', null, { id });
     },
 
+    // 待繳金額 = 下次扣款日要繳的那期帳單（結帳日已過就是已結帳金額；
+    // 還沒結帳則是累計中的當期消費），與 processCardBills 實際扣款金額一致
     getCardUnpaidAmount(cardId) {
       const card = this.getCreditCards().find(c => c.id === cardId);
       if (!card) return 0;
-      const today = new Date();
-      const txs = this.getTransactions().filter(tx => {
-        if (tx.creditCardId !== cardId || tx.type !== 'expense') return false;
-        const txDate = new Date(tx.date);
-        const stmtDay = card.statementDay;
-        let cutoff;
-        if (today.getDate() > stmtDay) {
-          cutoff = new Date(today.getFullYear(), today.getMonth(), stmtDay + 1);
-        } else {
-          cutoff = new Date(today.getFullYear(), today.getMonth() - 1, stmtDay + 1);
-        }
-        return txDate >= cutoff;
-      });
-      return txs.reduce((sum, tx) => sum + tx.amount, 0);
+      const info = this.getNextPaymentInfo(card);
+      return this.getCardBillForPeriod(cardId, info.stmtDate.getFullYear(), info.stmtDate.getMonth());
     },
 
     getCardBillForPeriod(cardId, year, month) {
@@ -577,31 +688,21 @@ const Store = (() => {
     },
 
     getCardTransactionsForMonth(cardId, year, month) {
-      return this.getCardTransactions(cardId).filter(tx => {
-        const d = new Date(tx.date);
-        return d.getFullYear() === year && d.getMonth() === month;
-      });
+      const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+      return this.getCardTransactions(cardId).filter(tx => (tx.date || '').startsWith(prefix));
     },
 
+    // 下次扣款日 = 未來（含今天）最近的 paymentDay；
+    // 該期結帳日：扣款日在結帳日之後 → 同月結帳，否則為上個月結帳
     getNextPaymentInfo(card) {
       const today = new Date();
-      const stmtDay = card.statementDay;
-      const payDay = card.paymentDay;
-      let stmtDate, payDate;
-
-      if (today.getDate() <= stmtDay) {
-        stmtDate = new Date(today.getFullYear(), today.getMonth(), stmtDay);
-        payDate = new Date(today.getFullYear(), today.getMonth(), payDay);
-        if (payDay <= stmtDay) {
-          payDate = new Date(today.getFullYear(), today.getMonth() + 1, payDay);
-        }
-      } else {
-        stmtDate = new Date(today.getFullYear(), today.getMonth() + 1, stmtDay);
-        payDate = new Date(today.getFullYear(), today.getMonth() + 1, payDay);
-        if (payDay <= stmtDay) {
-          payDate = new Date(today.getFullYear(), today.getMonth() + 2, payDay);
-        }
+      today.setHours(0, 0, 0, 0);
+      let payDate = new Date(today.getFullYear(), today.getMonth(), card.paymentDay);
+      if (payDate < today) {
+        payDate = new Date(today.getFullYear(), today.getMonth() + 1, card.paymentDay);
       }
+      const stmtShift = card.paymentDay > card.statementDay ? 0 : -1;
+      const stmtDate = new Date(payDate.getFullYear(), payDate.getMonth() + stmtShift, card.statementDay);
       return { stmtDate, payDate };
     },
 
@@ -610,51 +711,72 @@ const Store = (() => {
       return loadCache(CACHE.autoBills) || [];
     },
 
-    processCardBills() {
+    // 開 App 時處理信用卡自動扣款：
+    // 1. 補扣最近 3 期內漏掉的扣款日（漏開 App 那天也會補），但只補「啟用補扣機制」之後的帳單，不回溯舊帳
+    // 2. 先向雲端 auto_bills 登記 bill_key（UNIQUE）當鎖，兩台裝置同天開 App 也不會重複扣款
+    // 3. 扣款交易帶 accountId，之後刪除/編輯會自動回沖帳戶餘額
+    async processCardBills() {
       const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      today.setHours(0, 0, 0, 0);
       const processed = this.getProcessedBills();
       const cards = this.getCreditCards();
+
+      let backfillFrom = loadCache(CACHE.billBackfillFrom);
+      if (!backfillFrom) {
+        backfillFrom = Utils.todayStr();
+        saveCache(CACHE.billBackfillFrom, backfillFrom);
+      }
+      const [fy, fm, fd] = backfillFrom.split('-').map(Number);
+      const fromDate = new Date(fy, fm - 1, fd);
+
       let newBills = 0;
 
-      cards.forEach(card => {
-        if (!card.linkedAccountId) return;
-        const payDay = card.paymentDay;
-        if (today.getDate() !== payDay) return;
+      for (const card of cards) {
+        if (!card.linkedAccountId) continue;
+        for (let k = 2; k >= 0; k--) {
+          const payDate = new Date(today.getFullYear(), today.getMonth() - k, card.paymentDay);
+          if (payDate > today || payDate < fromDate) continue;
 
-        const billKey = `${card.id}_${today.getFullYear()}_${today.getMonth()}`;
-        if (processed.includes(billKey)) return;
+          const billKey = `${card.id}_${payDate.getFullYear()}_${payDate.getMonth()}`;
+          if (processed.includes(billKey)) continue;
 
-        const info = this.getNextPaymentInfo(card);
-        const stmtMonth = info.stmtDate.getMonth();
-        const stmtYear = info.stmtDate.getFullYear();
-        const billAmount = this.getCardBillForPeriod(card.id, stmtYear, stmtMonth);
-        if (billAmount <= 0) return;
+          const stmtShift = card.paymentDay > card.statementDay ? 0 : -1;
+          const stmtDate = new Date(payDate.getFullYear(), payDate.getMonth() + stmtShift, card.statementDay);
+          const billAmount = this.getCardBillForPeriod(card.id, stmtDate.getFullYear(), stmtDate.getMonth());
+          if (billAmount <= 0) continue;
 
-        this.adjustAccountBalance(card.linkedAccountId, -billAmount);
+          let claimed = false;
+          try {
+            const res = await db.from('auto_bills').insert({ bill_key: billKey });
+            if (res.error) {
+              // 23505 = 對方裝置已處理這期 → 本機記下 key 即可；其他錯誤（如離線）下次開 App 再試
+              if (res.error.code !== '23505') continue;
+            } else {
+              claimed = true;
+            }
+          } catch { continue; }
 
-        this.addTransaction({
-          amount: billAmount,
-          type: 'expense',
-          category: 'bill',
-          description: `${card.name} 信用卡扣款`,
-          date: todayStr,
-          userId: card.ownerId,
-          walletType: 'personal',
-          creditCardId: '',
-          isAutoBill: true,
-        });
+          processed.push(billKey);
+          if (!claimed) continue;
 
-        processed.push(billKey);
-        newBills++;
-      });
-
-      if (newBills > 0) {
-        saveCache(CACHE.autoBills, processed);
-        processed.slice(-newBills).forEach(billKey => {
-          db.from('auto_bills').insert({ bill_key: billKey }).then();
-        });
+          const payStr = `${payDate.getFullYear()}-${String(payDate.getMonth() + 1).padStart(2, '0')}-${String(payDate.getDate()).padStart(2, '0')}`;
+          this.addTransaction({
+            amount: billAmount,
+            type: 'expense',
+            category: 'bill',
+            description: `${card.name} 信用卡扣款`,
+            date: payStr,
+            userId: card.ownerId,
+            walletType: 'personal',
+            creditCardId: '',
+            accountId: card.linkedAccountId,
+            isAutoBill: true,
+          });
+          newBills++;
+        }
       }
+
+      saveCache(CACHE.autoBills, processed);
       return newBills;
     },
 
@@ -683,7 +805,7 @@ const Store = (() => {
       stock.lastUpdated = null;
       list.push(stock);
       saveCache(CACHE.stocks, list);
-      db.from('stocks').insert(appStockToDb(stock)).then();
+      cloudWrite('stocks', 'insert', appStockToDb(stock));
       return stock;
     },
     updateStock(id, updates) {
@@ -692,7 +814,7 @@ const Store = (() => {
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...updates };
         saveCache(CACHE.stocks, list);
-        db.from('stocks').update(appStockToDb(list[idx])).eq('id', id).then();
+        cloudWrite('stocks', 'update', appStockToDb(list[idx]), { id });
       }
     },
     deleteStock(id) {
@@ -700,8 +822,8 @@ const Store = (() => {
       saveCache(CACHE.stocks, list);
       const txs = (loadCache(CACHE.stockTxs) || []).filter(t => t.stockId !== id);
       saveCache(CACHE.stockTxs, txs);
-      db.from('stock_transactions').delete().eq('stock_id', id).then();
-      db.from('stocks').delete().eq('id', id).then();
+      cloudWrite('stock_transactions', 'delete', null, { stock_id: id });
+      cloudWrite('stocks', 'delete', null, { id });
     },
 
     getStockTransactions(stockId) {
@@ -715,7 +837,7 @@ const Store = (() => {
       tx.createdAt = new Date().toISOString();
       txs.unshift(tx);
       saveCache(CACHE.stockTxs, txs);
-      db.from('stock_transactions').insert(appStockTxToDb(tx)).then();
+      cloudWrite('stock_transactions', 'insert', appStockTxToDb(tx));
 
       const stock = this.getAllStocks().find(s => s.id === tx.stockId);
       if (stock) {
@@ -739,7 +861,7 @@ const Store = (() => {
       saveCache(CACHE.finnhubKey, key);
       const settings = this.getSettings();
       settings.finnhubKey = key;
-      this.saveSettings(settings);
+      this.saveSettings(settings, ['finnhubKey']);
     },
 
     getStockTotalsByCurrency(scope) {
@@ -767,6 +889,12 @@ const Store = (() => {
     async importData(json) {
       try {
         const data = JSON.parse(json);
+        // 格式防呆：欄位存在但型別不對就整個拒絕，避免把雲端資料清掉後寫入垃圾
+        const listKeys = ['transactions', 'creditCards', 'accounts', 'autoBills', 'expenseCategories', 'incomeCategories'];
+        for (const k of listKeys) {
+          if (data[k] !== undefined && !Array.isArray(data[k])) return false;
+        }
+        if (data.settings !== undefined && (typeof data.settings !== 'object' || data.settings === null)) return false;
         if (data.transactions) {
           saveCache(CACHE.transactions, data.transactions);
           await db.from('transactions').delete().neq('id', '');

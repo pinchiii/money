@@ -82,6 +82,8 @@ const App = (() => {
       page = 'login';
     }
 
+    if (!PAGE_RENDERERS[page]) page = 'dashboard';
+
     currentPage = page;
 
     if (page !== 'add') {
@@ -144,7 +146,7 @@ const App = (() => {
       if (synced) {
         navigate('dashboard');
       }
-      const newBills = Store.processCardBills();
+      const newBills = await Store.processCardBills();
       if (newBills > 0) {
         setTimeout(() => Utils.showToast(`已自動處理 ${newBills} 筆信用卡扣款`), 500);
       }

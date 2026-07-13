@@ -1,13 +1,15 @@
 const Pages = (() => {
+  const esc = Utils.esc; // 使用者輸入插入 innerHTML 前一律跳脫
   let currentMonth = new Date().getMonth();
   let currentYear = new Date().getFullYear();
   let walletFilter = 'shared'; // 'shared' | 'house_fund' | 'personal'
   const ASSET_VIEW_KEY = 'pinchi_asset_view';
-  let assetView = localStorage.getItem(ASSET_VIEW_KEY) || 'personal'; // 'personal' | 'house_fund'
+  // 共同資產為主：預設顯示買房基金，記住使用者上次的選擇
+  let assetView = localStorage.getItem(ASSET_VIEW_KEY) || 'house_fund'; // 'personal' | 'house_fund'
   let cardViewId = null;
   let txViewMode = 'list';   // 'list' | 'calendar' | 'chart'
   let calendarSelectedDate = null;
-  let dashboardTab = 'personal'; // 'personal' | 'shared'
+  let dashboardTab = 'shared'; // 'shared' | 'personal'，共同帳本優先
 
   // ──────────── Login ────────────
   function renderLogin() {
@@ -19,9 +21,9 @@ const Pages = (() => {
         <p class="login-subtitle">一起輕鬆管理我們的帳務吧</p>
         <div class="login-users">
           ${settings.users.map(u => `
-            <button class="login-user-btn" onclick="Pages.tryLogin('${u.id}')">
-              <span class="login-user-emoji">${u.emoji}</span>
-              <span class="login-user-name">${u.name}</span>
+            <button class="login-user-btn" onclick="Pages.tryLogin('${esc(u.id)}')">
+              <span class="login-user-emoji">${esc(u.emoji)}</span>
+              <span class="login-user-name">${esc(u.name)}</span>
               ${u.pin ? '<span class="login-lock">🔒</span>' : ''}
             </button>
           `).join('')}
@@ -38,7 +40,7 @@ const Pages = (() => {
     if (user.pin) {
       showModal(`
         <div class="modal-header">
-          <div class="modal-title">${user.emoji} 輸入 PIN</div>
+          <div class="modal-title">${esc(user.emoji)} 輸入 PIN</div>
           <button class="modal-close" onclick="Pages.hideModal()">✕</button>
         </div>
         <div class="form-grid">
@@ -86,14 +88,17 @@ const Pages = (() => {
 
     const allTxs = Store.getVisibleTransactions();
     const todayStr = Utils.todayStr();
+    const monthPrefix = todayStr.slice(0, 7);
+    // 只統計本月，且排除信用卡自動扣款（消費當下已記過一次，扣款屬轉帳，計入會重複）
+    const isCountedExpense = (tx) => tx.type === 'expense' && !tx.isAutoBill && (tx.date || '').startsWith(monthPrefix);
 
     const personalTxs = allTxs.filter(tx => tx.walletType === 'personal' && tx.userId === me);
-    const personalExpense = personalTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
+    const personalExpense = personalTxs.filter(isCountedExpense).reduce((s, tx) => s + tx.amount, 0);
     const personalToday = personalTxs.filter(tx => tx.date === todayStr)
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     const sharedTxs = allTxs.filter(tx => tx.walletType === 'shared');
-    const sharedExpense = sharedTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
+    const sharedExpense = sharedTxs.filter(isCountedExpense).reduce((s, tx) => s + tx.amount, 0);
     const sharedRecent = sharedTxs
       .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''))
       .slice(0, 5);
@@ -106,6 +111,14 @@ const Pages = (() => {
     const dashTwValue = Utils.sumStocksMarketValueTw(dashTwStocks);
     const dashTwCost = Utils.sumStocksCostTw(dashTwStocks);
 
+    // 共同財務摘要：買房基金總資產（台幣 = 存款 + 台股市值；美股另計）
+    const hfBalances = Store.getHouseFundBalances();
+    const hfStockTotals = Store.getStockTotalsByCurrency('house_fund');
+    const hfTwTotal = hfBalances.cashDeposit + hfStockTotals.tw;
+    const hfUsdTotal = hfStockTotals.usd;
+    // 個人帳戶現金合計
+    const myCashTotal = Store.getMyAccounts().reduce((s, a) => s + (a.balance || 0), 0);
+
     const renderTxList = (txs, emptyMsg) => {
       if (txs.length === 0) return `<div class="dash-empty">${emptyMsg}</div>`;
       return txs.map(tx => {
@@ -115,11 +128,11 @@ const Pages = (() => {
         const typeLabel = tx.type === 'income' ? '收入' : '支出';
         return `
           <div class="tx-item" onclick="Pages.showTxDetail('${tx.id}')">
-            <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+            <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${esc(cat.icon)}</div>
             <div class="tx-details">
-              <div class="tx-desc">${tx.description || cat.name}</div>
+              <div class="tx-desc">${esc(tx.description || cat.name)}</div>
               <div class="tx-meta">
-                <span class="tx-meta-text">${user.emoji} ${user.name}・${typeLabel}・${Utils.formatDate(tx.date)}</span>
+                <span class="tx-meta-text">${esc(user.emoji)} ${esc(user.name)}・${typeLabel}・${Utils.formatDate(tx.date)}</span>
               </div>
             </div>
             <div class="tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
@@ -129,7 +142,7 @@ const Pages = (() => {
 
     return `
       <div class="user-greeting">
-        <span>${meInfo.emoji} ${meInfo.name}，你好</span>
+        <span>${esc(meInfo.emoji)} ${esc(meInfo.name)}，你好</span>
         <button class="logout-btn" onclick="App.logout()">切換帳號</button>
       </div>
 
@@ -139,22 +152,53 @@ const Pages = (() => {
       </button>
 
       <div class="card">
-        <div class="card-title">我的支出</div>
+        <div class="card-title">💑 我們的共同財務</div>
         <div class="asset-grid">
-          <div class="asset-block expense-block" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
-            <div class="asset-label">🔒 私人</div>
-            <div class="asset-value">${Utils.formatAmount(personalExpense)}</div>
-          </div>
           <div class="asset-block expense-block" onclick="Pages.setWalletFilter('shared');App.navigate('transactions')">
-            <div class="asset-label">💑 共同</div>
+            <div class="asset-label">本月共同支出</div>
             <div class="asset-value">${Utils.formatAmount(sharedExpense)}</div>
+          </div>
+          <div class="asset-block positive" onclick="Pages.openHouseFundAssets()">
+            <div class="asset-label">🏠 買房基金</div>
+            <div class="asset-value">${Utils.formatAmount(hfTwTotal)}</div>
+            ${hfUsdTotal > 0 ? `<div class="asset-sub">＋美股 ${Utils.formatUSD(hfUsdTotal)}</div>` : ''}
           </div>
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-title">🔒 我的私人</div>
+        <div class="asset-grid">
+          <div class="asset-block expense-block" onclick="Pages.setWalletFilter('personal');App.navigate('transactions')">
+            <div class="asset-label">本月私人支出</div>
+            <div class="asset-value">${Utils.formatAmount(personalExpense)}</div>
+          </div>
+          <div class="asset-block" onclick="Pages.setAssetView('personal');App.navigate('wallet')">
+            <div class="asset-label">👤 個人帳戶現金</div>
+            <div class="asset-value">${Utils.formatAmount(myCashTotal)}</div>
+          </div>
+        </div>
+      </div>
+
+      ${upcomingBills.length > 0 ? `
+        <div class="card">
+          <div class="card-title">即將扣款</div>
+          ${upcomingBills.map(b => `
+            <div class="bill-item" onclick="Pages.viewCardStatement('${b.card.id}')">
+              <div class="bill-dot" style="background:${b.card.color || '#7A9E7E'}"></div>
+              <div class="bill-info">
+                <div class="bill-name">${esc(b.card.name)}</div>
+                <div class="bill-date">扣款日 ${b.payDate.getMonth() + 1}/${b.payDate.getDate()}（${Utils.daysUntil(b.payDate)} 天後）</div>
+              </div>
+              <div class="bill-amount">-${Utils.formatAmount(b.unpaid)}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
       ${myStocks.length > 0 ? `
-        <div class="card" onclick="App.navigate('wallet')" style="cursor:pointer">
-          <div class="card-title">📈 股票資產</div>
+        <div class="card" onclick="Pages.setAssetView('personal');App.navigate('wallet')" style="cursor:pointer">
+          <div class="card-title">📈 我的股票</div>
           <div class="asset-grid">
             ${dashUsStocks.length > 0 ? `
               <div class="asset-block ${dashUsValue - dashUsCost >= 0 ? 'positive' : 'negative'}">
@@ -172,26 +216,10 @@ const Pages = (() => {
         </div>
       ` : ''}
 
-      ${upcomingBills.length > 0 ? `
-        <div class="card">
-          <div class="card-title">即將扣款</div>
-          ${upcomingBills.map(b => `
-            <div class="bill-item" onclick="Pages.viewCardStatement('${b.card.id}')">
-              <div class="bill-dot" style="background:${b.card.color || '#7A9E7E'}"></div>
-              <div class="bill-info">
-                <div class="bill-name">${b.card.name}</div>
-                <div class="bill-date">扣款日 ${b.payDate.getMonth() + 1}/${b.payDate.getDate()}（${Utils.daysUntil(b.payDate)} 天後）</div>
-              </div>
-              <div class="bill-amount">-${Utils.formatAmount(b.unpaid)}</div>
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-
       <div class="card">
         <div class="dash-tab-bar">
-          <button class="dash-tab ${dashboardTab === 'personal' ? 'active' : ''}" onclick="Pages.setDashboardTab('personal')">🔒 私人帳本</button>
           <button class="dash-tab ${dashboardTab === 'shared' ? 'active' : ''}" onclick="Pages.setDashboardTab('shared')">💑 共同帳本</button>
+          <button class="dash-tab ${dashboardTab === 'personal' ? 'active' : ''}" onclick="Pages.setDashboardTab('personal')">🔒 私人帳本</button>
         </div>
         ${dashboardTab === 'personal'
           ? renderTxList(personalToday, '要記得記帳唷！')
@@ -228,8 +256,9 @@ const Pages = (() => {
     const filtered = getFilteredTxs();
     const groups = Utils.groupByDate(filtered);
 
+    // 信用卡自動扣款不重複計入支出（刷卡當下已記過），明細列表仍會顯示該筆
     const totalIncome = filtered.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const totalExpense = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const totalExpense = filtered.filter(t => t.type === 'expense' && !t.isAutoBill).reduce((s, t) => s + t.amount, 0);
     const balance = totalIncome - totalExpense;
 
     let content = '';
@@ -280,7 +309,7 @@ const Pages = (() => {
         </button>
         <button class="ledger-tab ${walletFilter === 'personal' ? 'active' : ''}" onclick="Pages.setWalletFilter('personal')">
           <span class="ledger-tab-icon">🔒</span>
-          <span class="ledger-tab-name">${meInfo.name}的私帳</span>
+          <span class="ledger-tab-name">${esc(meInfo.name)}的私帳</span>
         </button>
       </div>
 
@@ -302,8 +331,9 @@ const Pages = (() => {
 
     const dailyTotals = {};
     txs.forEach(tx => {
-      if (tx.type !== 'expense') return;
-      const day = new Date(tx.date).getDate();
+      if (tx.type !== 'expense' || tx.isAutoBill) return;
+      const day = Number((tx.date || '').slice(8, 10));
+      if (!day) return;
       dailyTotals[day] = (dailyTotals[day] || 0) + tx.amount;
     });
 
@@ -415,7 +445,7 @@ const Pages = (() => {
   }
 
   function renderChartView(txs) {
-    const expenses = txs.filter(t => t.type === 'expense');
+    const expenses = txs.filter(t => t.type === 'expense' && !t.isAutoBill);
     const total = expenses.reduce((s, t) => s + t.amount, 0);
 
     if (total === 0) return `
@@ -452,8 +482,8 @@ const Pages = (() => {
           <div class="chart-legend-item">
             <div class="chart-legend-left">
               <div class="chart-legend-dot" style="background:${s.color}"></div>
-              <span class="chart-legend-icon">${s.icon}</span>
-              <span class="chart-legend-name">${s.name}</span>
+              <span class="chart-legend-icon">${esc(s.icon)}</span>
+              <span class="chart-legend-name">${esc(s.name)}</span>
             </div>
             <div class="chart-legend-right">
               <span class="chart-legend-amount">${Utils.formatAmount(s.total)}</span>
@@ -564,14 +594,14 @@ const Pages = (() => {
 
       html += `
         <div class="chat-row ${isMine ? 'mine' : 'theirs'}" onclick="Pages.showTxDetail('${tx.id}')">
-          ${!isMine ? `<div class="chat-avatar">${user.emoji}</div>` : ''}
+          ${!isMine ? `<div class="chat-avatar">${esc(user.emoji)}</div>` : ''}
           <div class="chat-bubble ${isMine ? 'mine' : 'theirs'}">
-            <div class="chat-bubble-cat">${cat.icon} ${tx.description || cat.name}</div>
+            <div class="chat-bubble-cat">${esc(cat.icon)} ${esc(tx.description || cat.name)}</div>
             <div class="chat-bubble-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
-            ${card ? `<div class="chat-bubble-card">💳 ${card.name}</div>` : ''}
+            ${card ? `<div class="chat-bubble-card">💳 ${esc(card.name)}</div>` : ''}
             <div class="chat-bubble-time">${time}</div>
           </div>
-          ${isMine ? `<div class="chat-avatar">${user.emoji}</div>` : ''}
+          ${isMine ? `<div class="chat-avatar">${esc(user.emoji)}</div>` : ''}
         </div>
       `;
     });
@@ -590,12 +620,12 @@ const Pages = (() => {
 
     return `
       <div class="tx-item" onclick="Pages.showTxDetail('${tx.id}')">
-        <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+        <div class="tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${esc(cat.icon)}</div>
         <div class="tx-details">
-          <div class="tx-desc">${tx.description || cat.name}</div>
+          <div class="tx-desc">${esc(tx.description || cat.name)}</div>
           <div class="tx-meta">
             ${isAdvanced ? '<span class="tx-wallet-tag advanced">代墊</span>' : ''}
-            <span class="tx-meta-text">${payer.emoji} ${payer.name}・${payMethod}</span>
+            <span class="tx-meta-text">${esc(payer.emoji)} ${esc(payer.name)}・${esc(payMethod)}</span>
           </div>
         </div>
         <div class="tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
@@ -628,7 +658,7 @@ const Pages = (() => {
       </div>
 
       <div class="amount-input-wrap">
-        <span class="currency">${settings.currency}</span>
+        <span class="currency">${esc(settings.currency)}</span>
         <input type="number" class="amount-input" id="tx-amount" placeholder="0"
           value="${editTx?.amount || ''}" inputmode="decimal" autofocus>
       </div>
@@ -656,7 +686,7 @@ const Pages = (() => {
           <select id="tx-user" onchange="Pages.onPayerChange()">
             ${type === 'expense' ? '<option value="shared_wallet">💩 共用錢包</option>' : ''}
             ${settings.users.map(u => `
-              <option value="${u.id}" ${defaultPayer === u.id ? 'selected' : ''}>${u.emoji} ${u.name}</option>
+              <option value="${esc(u.id)}" ${defaultPayer === u.id ? 'selected' : ''}>${esc(u.emoji)} ${esc(u.name)}</option>
             `).join('')}
           </select>
         </div>
@@ -667,7 +697,7 @@ const Pages = (() => {
             <select id="tx-card">
               <option value="">💵 現金</option>
               ${payerCards.map(c => `
-                <option value="${c.id}" ${editTx?.creditCardId === c.id ? 'selected' : ''}>💳 ${c.name}</option>
+                <option value="${c.id}" ${editTx?.creditCardId === c.id ? 'selected' : ''}>💳 ${esc(c.name)}</option>
               `).join('')}
             </select>
             ${!isPersonal ? '<div class="field-hint">刷誰的卡，帳單就會記在誰的卡帳上</div>' : ''}
@@ -680,7 +710,7 @@ const Pages = (() => {
             <select id="tx-account">
               <option value="">💵 現金</option>
               ${myAccounts.map(a => `
-                <option value="${a.id}" ${editTx?.accountId === a.id ? 'selected' : ''}>${a.icon} ${a.name}</option>
+                <option value="${a.id}" ${editTx?.accountId === a.id ? 'selected' : ''}>${esc(a.icon)} ${esc(a.name)}</option>
               `).join('')}
             </select>
             <div class="field-hint">選擇帳戶後，該帳戶餘額會自動增加</div>
@@ -691,9 +721,9 @@ const Pages = (() => {
           <label>分類</label>
           <div class="category-grid" id="category-grid">
             ${categories.map(c => `
-              <button class="category-btn ${editTx?.category === c.id ? 'active' : ''}" data-cat="${c.id}" onclick="Pages.selectCategory(this)">
-                <span class="cat-icon">${c.icon}</span>
-                ${c.name}
+              <button class="category-btn ${editTx?.category === c.id ? 'active' : ''}" data-cat="${esc(c.id)}" onclick="Pages.selectCategory(this)">
+                <span class="cat-icon">${esc(c.icon)}</span>
+                ${esc(c.name)}
               </button>
             `).join('')}
           </div>
@@ -701,12 +731,12 @@ const Pages = (() => {
 
         <div class="form-field">
           <label>說明</label>
-          <input type="text" id="tx-desc" placeholder="花費的項目（選填）" value="${editTx?.description || ''}">
+          <input type="text" id="tx-desc" placeholder="花費的項目（選填）" value="${esc(editTx?.description || '')}">
         </div>
 
         <div class="form-field">
           <label>備註</label>
-          <input type="text" id="tx-note" placeholder="備註紀錄" value="${editTx?.note || ''}">
+          <input type="text" id="tx-note" placeholder="備註紀錄" value="${esc(editTx?.note || '')}">
         </div>
 
         <div class="form-field">
@@ -765,7 +795,7 @@ const Pages = (() => {
     const userCards = allCards.filter(c => c.ownerId === userId);
     const currentVal = cardSelect.value;
     cardSelect.innerHTML = '<option value="">💵 現金</option>' +
-      userCards.map(c => `<option value="${c.id}" ${currentVal === c.id ? 'selected' : ''}>💳 ${c.name}</option>`).join('');
+      userCards.map(c => `<option value="${c.id}" ${currentVal === c.id ? 'selected' : ''}>💳 ${Utils.esc(c.name)}</option>`).join('');
   }
 
   // ──────────── Credit Cards (獨立頁面) ────────────
@@ -787,8 +817,8 @@ const Pages = (() => {
         return `
           <div class="credit-card-visual" style="background:${card.color}" onclick="Pages.viewCardStatement('${card.id}')">
             <div>
-              <div class="cc-name">${card.name}</div>
-              <div class="cc-number">•••• •••• •••• ${card.lastFourDigits || '****'}</div>
+              <div class="cc-name">${esc(card.name)}</div>
+              <div class="cc-number">•••• •••• •••• ${esc(card.lastFourDigits || '****')}</div>
             </div>
             <div class="cc-bottom">
               <div>
@@ -836,8 +866,8 @@ const Pages = (() => {
 
       <div class="credit-card-visual" style="background:${card.color}" onclick="Pages.showCardDetail('${card.id}')">
         <div>
-          <div class="cc-name">${card.name}</div>
-          <div class="cc-number">•••• •••• •••• ${card.lastFourDigits || '****'}</div>
+          <div class="cc-name">${esc(card.name)}</div>
+          <div class="cc-number">•••• •••• •••• ${esc(card.lastFourDigits || '****')}</div>
         </div>
         <div class="cc-bottom">
           <div>
@@ -953,8 +983,8 @@ const Pages = (() => {
           <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
             <div class="stock-card-top">
               <div class="stock-card-info">
-                <div class="stock-card-symbol">${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
-                <div class="stock-card-name">${stock.name || stock.symbol}</div>
+                <div class="stock-card-symbol">${esc(stock.symbol)} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+                <div class="stock-card-name">${esc(stock.name || stock.symbol)}</div>
               </div>
               <div class="stock-card-price">
                 <div class="stock-card-current">${fmt(stock.currentPrice)}</div>
@@ -997,9 +1027,9 @@ const Pages = (() => {
       ` : viewAccounts.map(account => `
         <div class="account-card" onclick="Pages.showAccountDetail('${account.id}')">
           <div class="account-card-top">
-            <div class="account-card-icon">${account.icon}</div>
+            <div class="account-card-icon">${esc(account.icon)}</div>
             <div class="account-card-info">
-              <div class="account-card-name">${account.name}</div>
+              <div class="account-card-name">${esc(account.name)}</div>
             </div>
             <div class="account-card-balance ${(account.balance || 0) >= 0 ? 'positive' : 'negative'}">
               ${Utils.formatAmount(account.balance || 0)}
@@ -1191,8 +1221,8 @@ const Pages = (() => {
           <div class="stock-card" onclick="Pages.showStockDetail('${stock.id}')">
             <div class="stock-card-top">
               <div class="stock-card-info">
-                <div class="stock-card-symbol">${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
-                <div class="stock-card-name">${stock.name || stock.symbol}</div>
+                <div class="stock-card-symbol">${esc(stock.symbol)} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+                <div class="stock-card-name">${esc(stock.name || stock.symbol)}</div>
               </div>
               <div class="stock-card-price">
                 <div class="stock-card-current">${fmt(stock.currentPrice)}</div>
@@ -1244,8 +1274,8 @@ const Pages = (() => {
                   <div class="hf-deposit-row" onclick="Pages.showTxDetail('${tx.id}')">
                     <div class="hf-deposit-row-left">
                       <span class="hf-deposit-action ${tx.type}">${action}</span>
-                      <span class="hf-deposit-user">${user.emoji} ${user.name}</span>
-                      <span class="hf-deposit-desc">${tx.description || ''}</span>
+                      <span class="hf-deposit-user">${esc(user.emoji)} ${esc(user.name)}</span>
+                      <span class="hf-deposit-desc">${esc(tx.description || '')}</span>
                     </div>
                     <div class="hf-deposit-row-right">
                       <span class="hf-deposit-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</span>
@@ -1344,7 +1374,7 @@ const Pages = (() => {
             <label>${userLabels[mode]}</label>
             <select id="hf-deposit-user">
               ${settings.users.map(u => `
-                <option value="${u.id}" ${u.id === me ? 'selected' : ''}>${u.emoji} ${u.name}</option>
+                <option value="${esc(u.id)}" ${u.id === me ? 'selected' : ''}>${esc(u.emoji)} ${esc(u.name)}</option>
               `).join('')}
             </select>
           </div>
@@ -1452,12 +1482,12 @@ const Pages = (() => {
         </div>
         <div class="form-field">
           <label id="stock-symbol-label">股票代號（${market === 'us' ? '例：AAPL、TSLA' : '例：2330、2317'}）</label>
-          <input type="text" id="stock-symbol" placeholder="${market === 'us' ? 'AAPL' : '2330'}" value="${editStock?.symbol || ''}" style="text-transform:uppercase" ${isEdit ? 'readonly' : ''}>
+          <input type="text" id="stock-symbol" placeholder="${market === 'us' ? 'AAPL' : '2330'}" value="${esc(editStock?.symbol || '')}" style="text-transform:uppercase" ${isEdit ? 'readonly' : ''}>
           <div id="stock-symbol-status" class="stock-symbol-status"></div>
         </div>
         <div class="form-field">
           <label>股票名稱</label>
-          <input type="text" id="stock-name" placeholder="${market === 'us' ? 'Apple Inc.' : '台積電'}" value="${editStock?.name || ''}">
+          <input type="text" id="stock-name" placeholder="${market === 'us' ? 'Apple Inc.' : '台積電'}" value="${esc(editStock?.name || '')}">
         </div>
         <div class="form-field">
           <label>持有股數</label>
@@ -1611,11 +1641,11 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">📈 ${stock.symbol} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
+        <div class="modal-title">📈 ${esc(stock.symbol)} <span class="stock-market-tag ${m}">${Utils.getMarketLabel(m)}</span></div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="stock-detail-hero">
-        <div class="stock-detail-name">${stock.name || stock.symbol}</div>
+        <div class="stock-detail-name">${esc(stock.name || stock.symbol)}</div>
         <div class="stock-detail-price">${fmt(stock.currentPrice)}</div>
         ${stock.lastUpdated ? `<div class="stock-detail-time">更新於 ${new Date(stock.lastUpdated).toLocaleString('zh-TW')}</div>` : ''}
       </div>
@@ -1670,7 +1700,7 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${type === 'buy' ? '買進' : '賣出'} ${stock.symbol}</div>
+        <div class="modal-title">${type === 'buy' ? '買進' : '賣出'} ${esc(stock.symbol)}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="form-grid">
@@ -1714,7 +1744,7 @@ const Pages = (() => {
       type,
       shares,
       price,
-      date: document.getElementById('stx-date').value,
+      date: document.getElementById('stx-date').value || Utils.todayStr(),
     });
 
     Utils.showToast(`已記錄${type === 'buy' ? '買進' : '賣出'}`);
@@ -1928,7 +1958,7 @@ const Pages = (() => {
       <div class="form-grid">
         <div class="form-field">
           <label>帳戶名稱</label>
-          <input type="text" id="acct-name" placeholder="例：台新銀行" value="${editAccount?.name || ''}">
+          <input type="text" id="acct-name" placeholder="例：台新銀行" value="${esc(editAccount?.name || '')}">
         </div>
         <div class="form-field">
           <label>圖示</label>
@@ -1971,7 +2001,7 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${account.icon} ${account.name}</div>
+        <div class="modal-title">${esc(account.icon)} ${esc(account.name)}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="modal-balance-hero">
@@ -1994,9 +2024,9 @@ const Pages = (() => {
             const sign = tx.type === 'income' ? '+' : '-';
             return `
               <div class="account-tx-row" onclick="Pages.hideModal();Pages.showTxDetail('${tx.id}')">
-                <div class="account-tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${cat.icon}</div>
+                <div class="account-tx-icon" style="background:${tx.type === 'income' ? '#E8F5E9' : '#FFEBEE'}">${esc(cat.icon)}</div>
                 <div class="account-tx-info">
-                  <div class="account-tx-desc">${tx.description || cat.name}</div>
+                  <div class="account-tx-desc">${esc(tx.description || cat.name)}</div>
                   <div class="account-tx-date">${Utils.formatDate(tx.date)}</div>
                 </div>
                 <div class="account-tx-amount ${tx.type}">${sign}${Utils.formatAmount(tx.amount)}</div>
@@ -2037,7 +2067,7 @@ const Pages = (() => {
       Utils.showToast('已新增帳戶！');
     }
     hideModal();
-    App.navigate('accounts');
+    App.navigate('wallet');
   }
 
   function deleteAccount(id) {
@@ -2047,7 +2077,7 @@ const Pages = (() => {
       Store.deleteAccount(id);
       hideModal();
       Utils.showToast('已刪除帳戶');
-      App.navigate('accounts');
+      App.navigate('wallet');
     }
   }
 
@@ -2060,7 +2090,7 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${account.icon} ${account.name} — ${titles[mode]}</div>
+        <div class="modal-title">${esc(account.icon)} ${esc(account.name)} — ${titles[mode]}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="modal-balance-hero">
@@ -2089,6 +2119,7 @@ const Pages = (() => {
   function confirmAdjust(accountId, mode) {
     const val = parseFloat(document.getElementById('adjust-amount').value);
     if (isNaN(val)) { Utils.showToast('請輸入金額'); return; }
+    if (mode !== 'set' && val <= 0) { Utils.showToast('請輸入大於 0 的金額'); return; }
 
     const account = Store.getAccounts().find(a => a.id === accountId);
     if (!account) return;
@@ -2103,7 +2134,7 @@ const Pages = (() => {
       Store.updateAccount(accountId, { balance: val });
       Utils.showToast('餘額已更新');
     } else if (mode === 'income') {
-      Store.adjustAccountBalance(accountId, val);
+      // 帳戶餘額由 Store.addTransaction 依 accountId 自動調整，這裡不再手動調
       Store.addTransaction({
         amount: val,
         type: 'income',
@@ -2118,7 +2149,6 @@ const Pages = (() => {
       });
       Utils.showToast(`已入帳 ${Utils.formatAmount(val)}`);
     } else {
-      Store.adjustAccountBalance(accountId, -val);
       Store.addTransaction({
         amount: val,
         type: 'expense',
@@ -2147,10 +2177,10 @@ const Pages = (() => {
     return `
       <div class="settings-group">
         <div class="settings-group-title">我的帳號</div>
-        <div class="settings-item" onclick="Pages.editUser('${me}')">
+        <div class="settings-item" onclick="Pages.editUser('${esc(me)}')">
           <div class="settings-item-left">
-            <div class="settings-item-icon">${meInfo.emoji}</div>
-            <div class="settings-item-label">${meInfo.name}</div>
+            <div class="settings-item-icon">${esc(meInfo.emoji)}</div>
+            <div class="settings-item-label">${esc(meInfo.name)}</div>
           </div>
           <div class="settings-item-arrow">›</div>
         </div>
@@ -2224,8 +2254,8 @@ const Pages = (() => {
         </div>
         <div class="settings-item" onclick="Pages.clearData()">
           <div class="settings-item-left">
-            <div class="settings-item-icon">🗑️</div>
-            <div class="settings-item-label" style="color:var(--danger)">清除所有資料</div>
+            <div class="settings-item-icon">🔄</div>
+            <div class="settings-item-label" style="color:var(--danger)">重置本機資料（雲端不受影響）</div>
           </div>
           <div class="settings-item-arrow">›</div>
         </div>
@@ -2268,7 +2298,7 @@ const Pages = (() => {
 
     showModal(`
       <div class="modal-header">
-        <div class="modal-title">${cat.icon} ${tx.description || cat.name}</div>
+        <div class="modal-title">${esc(cat.icon)} ${esc(tx.description || cat.name)}</div>
         <button class="modal-close" onclick="Pages.hideModal()">✕</button>
       </div>
       <div class="detail-row">
@@ -2283,7 +2313,7 @@ const Pages = (() => {
       </div>
       <div class="detail-row">
         <div class="detail-label">分類</div>
-        <div class="detail-value">${cat.icon} ${cat.name}</div>
+        <div class="detail-value">${esc(cat.icon)} ${esc(cat.name)}</div>
       </div>
       <div class="detail-row">
         <div class="detail-label">日期</div>
@@ -2291,7 +2321,7 @@ const Pages = (() => {
       </div>
       <div class="detail-row">
         <div class="detail-label">記錄者</div>
-        <div class="detail-value">${user.emoji} ${user.name}</div>
+        <div class="detail-value">${esc(user.emoji)} ${esc(user.name)}</div>
       </div>
       <div class="detail-row">
         <div class="detail-label">錢包</div>
@@ -2300,13 +2330,13 @@ const Pages = (() => {
       ${card ? `
         <div class="detail-row">
           <div class="detail-label">信用卡</div>
-          <div class="detail-value">${card.name}</div>
+          <div class="detail-value">${esc(card.name)}</div>
         </div>
       ` : ''}
       ${tx.note ? `
         <div class="detail-row">
           <div class="detail-label">備註</div>
-          <div class="detail-value">${tx.note}</div>
+          <div class="detail-value">${esc(tx.note)}</div>
         </div>
       ` : ''}
       ${canEdit ? `
@@ -2331,11 +2361,11 @@ const Pages = (() => {
       <div class="form-grid">
         <div class="form-field">
           <label>卡片名稱</label>
-          <input type="text" id="card-name" placeholder="例：中信 LINE Pay" value="${editCard?.name || ''}">
+          <input type="text" id="card-name" placeholder="例：中信 LINE Pay" value="${esc(editCard?.name || '')}">
         </div>
         <div class="form-field">
           <label>卡號末四碼</label>
-          <input type="text" id="card-digits" placeholder="1234" maxlength="4" value="${editCard?.lastFourDigits || ''}">
+          <input type="text" id="card-digits" placeholder="1234" maxlength="4" value="${esc(editCard?.lastFourDigits || '')}">
         </div>
         <div class="form-field">
           <label>結帳日（每月幾號）</label>
@@ -2350,7 +2380,7 @@ const Pages = (() => {
           <select id="card-account">
             <option value="">不綁定帳戶</option>
             ${myAccounts.map(a => `
-              <option value="${a.id}" ${editCard?.linkedAccountId === a.id ? 'selected' : ''}>${a.icon} ${a.name}</option>
+              <option value="${a.id}" ${editCard?.linkedAccountId === a.id ? 'selected' : ''}>${esc(a.icon)} ${esc(a.name)}</option>
             `).join('')}
           </select>
           <div class="field-hint">綁定後，扣款日會自動從該帳戶扣除當月信用卡帳單</div>
@@ -2459,12 +2489,12 @@ const Pages = (() => {
       <div class="cat-manage-list">
         ${cats.map(c => `
           <div class="cat-manage-item">
-            <span class="cat-manage-icon">${c.icon}</span>
-            <span class="cat-manage-name">${c.name}</span>
+            <span class="cat-manage-icon">${esc(c.icon)}</span>
+            <span class="cat-manage-name">${esc(c.name)}</span>
             <div class="cat-manage-actions">
-              <button class="cat-manage-btn" onclick="Pages.showEditCategory('${type}','${c.id}')">✏️</button>
+              <button class="cat-manage-btn" onclick="Pages.showEditCategory('${type}','${esc(c.id)}')">✏️</button>
               ${(c.id !== 'other' && c.id !== 'other_income')
-                ? `<button class="cat-manage-btn danger" onclick="Pages.confirmDeleteCategory('${type}','${c.id}','${c.name}')">🗑️</button>`
+                ? `<button class="cat-manage-btn danger" onclick="Pages.confirmDeleteCategory('${type}','${esc(c.id)}')">🗑️</button>`
                 : ''}
             </div>
           </div>
@@ -2534,11 +2564,11 @@ const Pages = (() => {
               <button type="button" class="icon-pick-btn ${cat.icon === ic ? 'active' : ''}" onclick="Pages.pickCatIcon(this)" data-icon="${ic}">${ic}</button>
             `).join('')}
           </div>
-          <input type="text" id="custom-cat-icon" value="${cat.icon}" style="font-size:24px;text-align:center;margin-top:8px" maxlength="2">
+          <input type="text" id="custom-cat-icon" value="${esc(cat.icon)}" style="font-size:24px;text-align:center;margin-top:8px" maxlength="2">
         </div>
         <div class="form-field">
           <label>分類名稱</label>
-          <input type="text" id="custom-cat-name" value="${cat.name}">
+          <input type="text" id="custom-cat-name" value="${esc(cat.name)}">
         </div>
       </div>
       <div class="modal-actions">
@@ -2557,7 +2587,11 @@ const Pages = (() => {
     showManageCategories(type);
   }
 
-  function confirmDeleteCategory(type, catId, catName) {
+  function confirmDeleteCategory(type, catId) {
+    // 名稱從資料查，不經 onclick 字串傳遞，避免特殊字元造成 JS 注入
+    const cats = type === 'income' ? Store.getIncomeCategories() : Store.getExpenseCategories();
+    const cat = cats.find(c => c.id === catId);
+    const catName = cat ? cat.name : '';
     if (confirm(`確定要刪除「${catName}」分類嗎？已記錄的交易不受影響。`)) {
       Store.deleteCategory(type, catId);
       Utils.showToast('已刪除');
@@ -2573,8 +2607,23 @@ const Pages = (() => {
     if (!activeCategory) { Utils.showToast('請選擇分類'); return; }
 
     const me = Store.getCurrentUser();
-    const walletType = document.getElementById('tx-wallet').value;
+    let walletType = document.getElementById('tx-wallet').value;
     const accountId = document.getElementById('tx-account')?.value || '';
+    const old = editId ? Store.getTransactions().find(t => t.id === editId) : null;
+
+    // 買房基金交易在表單上顯示為「共同帳本」；編輯時若沒切到私人帳本，保留原本的 house_fund 歸屬
+    if (old && old.walletType === 'house_fund' && walletType === 'shared') {
+      walletType = 'house_fund';
+    }
+
+    // 帳戶連結：收入＋私人帳本時取表單值；編輯時若類型/帳本沒變，保留原本的連結
+    // （例如編輯一筆「手動扣款」交易的說明，不應讓帳戶餘額被退回）
+    let txAccountId = '';
+    if (type === 'income' && walletType === 'personal') {
+      txAccountId = accountId;
+    } else if (old && old.accountId && old.type === type && old.walletType === walletType) {
+      txAccountId = old.accountId;
+    }
 
     const tx = {
       amount,
@@ -2582,11 +2631,11 @@ const Pages = (() => {
       category: activeCategory.dataset.cat,
       description: document.getElementById('tx-desc').value.trim(),
       note: document.getElementById('tx-note').value.trim(),
-      date: document.getElementById('tx-date').value,
+      date: document.getElementById('tx-date').value || Utils.todayStr(),
       userId: walletType === 'personal' ? me : (document.getElementById('tx-user').value === 'shared_wallet' ? 'shared_wallet' : document.getElementById('tx-user').value),
       walletType,
       creditCardId: type === 'expense' && document.getElementById('tx-user')?.value !== 'shared_wallet' ? (document.getElementById('tx-card')?.value || '') : '',
-      accountId: type === 'income' && walletType === 'personal' ? accountId : '',
+      accountId: txAccountId,
     };
 
     if (editId) {
@@ -2597,10 +2646,10 @@ const Pages = (() => {
       return;
     }
 
+    // 帳戶餘額由 Store.addTransaction 依 accountId 自動調整
     Store.addTransaction(tx);
 
     if (type === 'income' && walletType === 'personal' && accountId) {
-      Store.adjustAccountBalance(accountId, amount);
       const account = Store.getAccounts().find(a => a.id === accountId);
       Utils.showToast(`已記錄！${account ? account.name : '帳戶'}餘額已更新`);
     } else if (tx.walletType === 'shared' && tx.creditCardId) {
@@ -2693,11 +2742,11 @@ const Pages = (() => {
       <div class="form-grid">
         <div class="form-field">
           <label>名稱</label>
-          <input type="text" id="edit-user-name" value="${user.name}">
+          <input type="text" id="edit-user-name" value="${esc(user.name)}">
         </div>
         <div class="form-field">
           <label>表情符號</label>
-          <input type="text" id="edit-user-emoji" value="${user.emoji}" style="font-size:24px;text-align:center;">
+          <input type="text" id="edit-user-emoji" value="${esc(user.emoji)}" style="font-size:24px;text-align:center;">
         </div>
       </div>
       <div class="modal-actions">
@@ -2795,7 +2844,7 @@ const Pages = (() => {
       <div class="form-grid">
         <div class="form-field">
           <label>API Key</label>
-          <input type="text" id="finnhub-key" placeholder="輸入你的 Finnhub API Key" value="${currentKey}">
+          <input type="text" id="finnhub-key" placeholder="輸入你的 Finnhub API Key" value="${esc(currentKey)}">
         </div>
       </div>
       <div class="modal-actions">
@@ -2868,12 +2917,27 @@ const Pages = (() => {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        if (Store.importData(ev.target.result)) {
+      reader.onload = async (ev) => {
+        let data;
+        try { data = JSON.parse(ev.target.result); } catch { Utils.showToast('匯入失敗，檔案格式不正確'); return; }
+
+        // 匯入會整表取代雲端與本機資料，先讓使用者確認備份內容
+        const count = (arr) => Array.isArray(arr) ? arr.length : 0;
+        const summary = [
+          data.transactions !== undefined ? `交易 ${count(data.transactions)} 筆` : '',
+          data.accounts !== undefined ? `帳戶 ${count(data.accounts)} 個` : '',
+          data.creditCards !== undefined ? `信用卡 ${count(data.creditCards)} 張` : '',
+          data.settings !== undefined ? '設定' : '',
+        ].filter(Boolean).join('、');
+        if (!confirm(`匯入將以備份內容【完全取代】現有資料：\n${summary || '（檔案中沒有可辨識的資料）'}\n\n確定要繼續嗎？`)) return;
+
+        Utils.showToast('匯入中...');
+        const ok = await Store.importData(ev.target.result);
+        if (ok) {
           Utils.showToast('匯入成功！');
           App.navigate('dashboard');
         } else {
-          Utils.showToast('匯入失敗，檔案格式不正確');
+          Utils.showToast('匯入失敗，資料未變更或不完整，請檢查檔案');
         }
       };
       reader.readAsText(file);
@@ -3147,8 +3211,8 @@ const Pages = (() => {
           const cat = Utils.getCategoryInfo(tx.category, tx.type);
           return `
             <div class="notion-preview-item">
-              <span>${cat.icon}</span>
-              <span style="flex:1">${tx.description || cat.name}</span>
+              <span>${esc(cat.icon)}</span>
+              <span style="flex:1">${esc(tx.description || cat.name)}</span>
               <span style="font-weight:700;color:var(--${tx.type === 'expense' ? 'expense' : 'income'}-color)">
                 ${tx.type === 'expense' ? '-' : '+'}${Utils.formatAmount(tx.amount)}
               </span>
@@ -3177,9 +3241,12 @@ const Pages = (() => {
   }
 
   function clearData() {
-    if (confirm('確定要清除所有資料嗎？此操作無法復原！')) {
-      localStorage.clear();
-      Utils.showToast('已清除所有資料');
+    if (confirm('要重置本機資料嗎？\n雲端資料不受影響，重新登入後會自動同步回來。')) {
+      // 保留裝置驗證，重置後不必重新輸入通行密碼
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('pinchi_') && k !== 'pinchi_device_bound')
+        .forEach(k => localStorage.removeItem(k));
+      Utils.showToast('已重置本機資料');
       App.logout();
     }
   }
@@ -3209,13 +3276,13 @@ const Pages = (() => {
 
   function resetFilters() {
     walletFilter = 'shared';
-    assetView = 'personal';
+    assetView = localStorage.getItem(ASSET_VIEW_KEY) || 'house_fund';
     cardViewId = null;
     editingTx = null;
     addTxType = 'expense';
     txViewMode = 'list';
     calendarSelectedDate = null;
-    dashboardTab = 'personal';
+    dashboardTab = 'shared';
   }
 
   return {

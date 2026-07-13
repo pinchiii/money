@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pinchi-v28';
+const CACHE_NAME = 'pinchi-v29';
 const ASSETS = [
   '/money/',
   '/money/index.html',
@@ -28,15 +28,24 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('supabase.co') || event.request.url.includes('cdn.jsdelivr.net')) {
+  const url = event.request.url;
+  // Supabase 資料 API 永遠走網路，不快取
+  if (url.includes('supabase.co')) {
     event.respondWith(fetch(event.request));
     return;
   }
+  // 只快取自家靜態檔與 supabase-js CDN（離線時沒有它整個 App 起不來）；
+  // 其他第三方 API（報價、proxy）不經快取
+  const isStatic = url.startsWith(self.location.origin) || url.includes('cdn.jsdelivr.net');
+  if (!isStatic || event.request.method !== 'GET') return;
+
   event.respondWith(
     fetch(event.request)
       .then(res => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
         return res;
       })
       .catch(() => caches.match(event.request))
